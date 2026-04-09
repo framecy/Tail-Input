@@ -9,8 +9,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var welcomeController: WelcomeWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // ── 固定宽度：避免"简"与"EN"宽度不同导致菜单栏跳动 ──
-        statusItem = NSStatusBar.system.statusItem(withLength: 56)
+        // ── 仅图标模式：让系统自动计算宽度，无多余空白 ──
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         updateStatusBarButton()
 
@@ -55,45 +55,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - 状态栏按钮更新
+    // MARK: - 状态栏按钮更新（仅图标，随系统深色/浅色自动适配）
 
     func updateStatusBarButton() {
         guard let button = statusItem.button else { return }
         let isChinese = InputMethodManager.shared.cachedIsChinese
 
-        // SF Symbol：中文用 character.textbox，英文用 keyboard
+        // 中文：character.textbox  英文：keyboard
         let symbolName = isChinese ? "character.textbox" : "keyboard"
-        let symConfig = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
-        guard let icon = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-                .withSymbolConfiguration(symConfig) else {
-            // 兜底：纯文字
+
+        // 使用 menuBarFont 尺寸保证与系统其他图标视觉一致
+        let pointSize: CGFloat = 14
+        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(hierarchicalColor: .labelColor))
+
+        if let icon = NSImage(systemSymbolName: symbolName, accessibilityDescription: isChinese ? "中文" : "英文")?
+                .withSymbolConfiguration(config) {
+            icon.isTemplate = true   // 模板图像：系统自动处理深/浅色及高亮
+            button.image = icon
+            button.imageScaling = .scaleProportionallyDown
+        } else {
+            // 兜底：Apple 等宽字符
             button.image = nil
-            button.title = isChinese ? "简" : "EN"
-            return
+            button.title = isChinese ? "中" : "En"
+            button.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         }
 
-        // 将 SF Symbol 嵌入 NSTextAttachment，与文字对齐后合并成 attributedTitle
-        let attachment = NSTextAttachment()
-        attachment.image = icon
-        let iconSize = icon.size
-        let font = NSFont.menuBarFont(ofSize: 12)
-        let capH = font.capHeight
-        attachment.bounds = CGRect(
-            x: 0,
-            y: (capH - iconSize.height) / 2,
-            width: iconSize.width,
-            height: iconSize.height
-        )
-
-        let result = NSMutableAttributedString(attachment: attachment)
-        result.append(NSAttributedString(
-            string: isChinese ? " 简" : " EN",
-            attributes: [
-                .font: font,
-                .foregroundColor: NSColor.labelColor
-            ]
-        ))
-        button.attributedTitle = result
+        button.title = ""            // 清除残留文字
+        button.attributedTitle = NSAttributedString()
     }
 
     /// 构建菜单内容（仅在菜单即将显示时调用）
