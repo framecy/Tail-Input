@@ -5,6 +5,7 @@ class WelcomeWindowController: NSWindowController {
     
     private var stackView: NSStackView!
     private var currentPage = 0
+    private var permissionRefreshTimer: Timer?
     
     init() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
@@ -49,11 +50,15 @@ class WelcomeWindowController: NSWindowController {
     }
     
     private func showPage(_ index: Int) {
+        // 停止之前的定时器
+        permissionRefreshTimer?.invalidate()
+        permissionRefreshTimer = nil
+        
         stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         
         switch index {
         case 0:
-            let title = createLabel("欢迎使用 SimpleSwitch", size: 24, weight: .bold)
+            let title = createLabel("欢迎使用 TailInput", size: 24, weight: .bold)
             let desc = createLabel("极致顺滑的 macOS 智能输入法切换工具。\n自动感知应用状态，让输入不再断档。", size: 14)
             desc.alignment = .center
             
@@ -82,16 +87,23 @@ class WelcomeWindowController: NSWindowController {
             stackView.addArrangedSubview(nextBtn)
             
         case 2:
-            let title = createLabel("权限检查", size: 20, weight: .semibold)
-            let desc = createLabel("虽然目前核心功能无需权限，但开启“辅助功能”\n权限能让应用在复杂窗口中的感应更精准。", size: 13)
+            let title = createLabel("辅助功能权限", size: 20, weight: .semibold)
+            let desc = createLabel("授予辅助功能权限可以让应用在复杂窗口\n环境中更精准地感应应用切换。", size: 13)
             desc.alignment = .center
             
-            let isTrusted = AXIsProcessTrusted()
-            let statusLabel = createLabel(isTrusted ? "✅ 已获得辅助功能权限" : "⚠️ 尚未获取权限", size: 12)
+            let isTrusted = AccessibilityManager.shared.refreshStatus()
+            let statusLabel = createLabel(isTrusted ? "✅ 已获得辅助功能权限" : "⚠️ 尚未获取权限（点击下方按钮授权）", size: 12)
+            statusLabel.tag = 1001 // 标记以便定时器刷新
             
-            let btn = createButton("打开系统设置", action: #selector(openPermissions))
+            let btn = createButton("打开系统设置授权", action: #selector(openPermissions))
+            if isTrusted {
+                btn.isEnabled = false
+                btn.title = "已授权 ✓"
+            }
+            btn.tag = 1002
+            
             let finishBtn = createButton("完成并进入菜单栏", action: #selector(finish))
-            finishBtn.keyEquivalent = "\r" // Enter key
+            finishBtn.keyEquivalent = "\r"
             
             stackView.addArrangedSubview(title)
             stackView.addArrangedSubview(desc)
@@ -99,6 +111,27 @@ class WelcomeWindowController: NSWindowController {
             stackView.addArrangedSubview(btn)
             stackView.setCustomSpacing(30, after: btn)
             stackView.addArrangedSubview(finishBtn)
+            
+            // ── 每 2 秒自动刷新权限状态 ──
+            permissionRefreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                guard let self = self, self.currentPage == 2 else { return }
+                let granted = AccessibilityManager.shared.refreshStatus()
+                // 找到标记的控件并更新
+                for view in self.stackView.arrangedSubviews {
+                    if let label = view as? NSTextField, label.tag == 1001 {
+                        label.stringValue = granted ? "✅ 已获得辅助功能权限" : "⚠️ 尚未获取权限（点击下方按钮授权）"
+                    }
+                    if let button = view as? NSButton, button.tag == 1002 {
+                        if granted {
+                            button.isEnabled = false
+                            button.title = "已授权 ✓"
+                        } else {
+                            button.isEnabled = true
+                            button.title = "打开系统设置授权"
+                        }
+                    }
+                }
+            }
             
         default:
             break
@@ -144,11 +177,12 @@ class WelcomeWindowController: NSWindowController {
     }
     
     @objc private func openPermissions() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
+        AccessibilityManager.shared.openAccessibilitySettings()
     }
     
     @objc private func finish() {
+        permissionRefreshTimer?.invalidate()
+        permissionRefreshTimer = nil
         UserDefaults.standard.set(true, forKey: "HasSeenWelcomePagev2")
         window?.close()
     }

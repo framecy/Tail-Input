@@ -194,7 +194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !AXIsProcessTrustedWithOptions(options) {
                 let alert = NSAlert()
                 alert.messageText = "请授权辅助功能"
-                alert.informativeText = "CapsLock 兼容模式需要 SimpleSwitch 在「系统设置 - 隐私与安全 - 辅助功能」中被授权。\n\n开启后，自动切换将通过模拟 CapsLock 完成，让你之后仍然可以用 CapsLock 切回中文。\n\n请前往系统设置开启 SimpleSwitch 的辅助功能权限，然后再次点击此菜单项。"
+                alert.informativeText = "CapsLock 兼容模式需要 TailInput 在「系统设置 - 隐私与安全 - 辅助功能」中被授权。\n\n开启后，自动切换将通过模拟 CapsLock 完成，让你之后仍然可以用 CapsLock 切回中文。\n\n请前往系统设置开启 TailInput 的辅助功能权限，然后再次点击此菜单项。"
                 alert.addButton(withTitle: "好")
                 alert.runModal()
                 return

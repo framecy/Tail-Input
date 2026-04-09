@@ -1,6 +1,6 @@
-name: SmartInputSwitcher
+name: TailInput
 options:
-  bundleIdPrefix: com.example
+  bundleIdPrefix: com.framed
   deploymentTarget:
     macOS: "13.0"
   xcodeVersion: "15.0"
@@ -11,7 +11,7 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "13.0"
 
 targets:
-  SmartInputSwitcher:
+  TailInput:
     type: application
     platform: macOS
     sources:
@@ -19,10 +19,10 @@ targets:
         type: group
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.SmartInputSwitcher
+        PRODUCT_BUNDLE_IDENTIFIER: com.framed.TailInput
         INFOPLIST_FILE: Sources/SmartInputSwitcher/Info.plist
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
-        PRODUCT_NAME: SmartInputSwitcher
+        PRODUCT_NAME: TailInput
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
