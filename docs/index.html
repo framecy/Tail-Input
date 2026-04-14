@@ -3,111 +3,154 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SimpleSwitch - macOS 智能输入法切换器</title>
+    <title>TailInput ⌨️ — macOS 智能输入法切换器</title>
+    <meta name="description" content="TailInput — 按应用自动切换输入法的 macOS 菜单栏工具。轻量、无感知、零配置即用。">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- 动态背景光晕 -->
     <div class="glow-orb orb-1"></div>
     <div class="glow-orb orb-2"></div>
-    
+
     <div class="container">
         <!-- 导航栏 -->
         <header class="navbar">
             <div class="logo">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="logo-icon">
-                    <rect x="2" y="4" width="20" height="16" rx="4" stroke="currentColor" stroke-width="2"/>
-                    <path d="M6 8H18M6 12H12M6 16H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-                SimpleSwitch
+                <span class="logo-emoji">⌨️</span>
+                TailInput
             </div>
             <nav class="nav-links">
                 <a href="#features">功能</a>
+                <a href="#install">安装</a>
                 <a href="https://github.com/framecy/SimpleSwitch" target="_blank" rel="noopener">GitHub</a>
             </nav>
         </header>
 
-        <!-- 主视觉区 (Hero) -->
+        <!-- 主视觉区 -->
         <main class="hero">
             <div class="hero-content">
-                <div class="badge">开源项目 &middot; macOS 专属</div>
-                <h1 class="hero-title">极致丝滑的<br><span class="text-gradient">智能输入法切换器</span></h1>
+                <div class="badge">v1.2.1 &middot; 开源 &middot; macOS 13+</div>
+                <h1 class="hero-title">告别输入法<br><span class="text-gradient">手动切换</span></h1>
                 <p class="hero-subtitle">
-                    0 卡顿，全自动感知。基于底层 TIS 缓存优化与事件合并技术，无需辅助功能权限，在守护隐私的同时提供最顺滑的 macOS 输入体验。
+                    切换 App 时自动切换输入法 — 英文 IDE、中文微信，一切自如。
+                    基于底层 TIS 乐观缓存，无需辅助功能权限，隐私优先。
                 </p>
                 <div class="hero-actions">
                     <a href="https://github.com/framecy/SimpleSwitch/releases" class="btn btn-primary">
-                        下载最新版本
+                        ↓ 下载 TailInput
                     </a>
                     <a href="https://github.com/framecy/SimpleSwitch" class="btn btn-secondary">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.379.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/>
                         </svg>
-                        源码仓库
+                        查看源码
                     </a>
                 </div>
             </div>
 
             <div class="hero-visual">
-                <!-- 模拟 macOS HUD 设计 -->
-                <div class="glass-card mockup-hud">
-                    <div class="hud-indicator active">EN</div>
-                    <div class="hud-indicator">简</div>
+                <!-- 菜单栏 mockup -->
+                <div class="glass-card mockup-menubar">
+                    <div class="menubar-row">
+                        <span class="menubar-time">9:41</span>
+                        <div class="menubar-icons">
+                            <span class="menubar-icon active">⌨</span>
+                            <span class="menubar-icon dim">wifi</span>
+                            <span class="menubar-icon dim">🔋</span>
+                        </div>
+                    </div>
+                    <div class="menubar-menu">
+                        <div class="menu-item menu-header">当前应用：Xcode</div>
+                        <div class="menu-item selected">✓ 默认（切回英文）</div>
+                        <div class="menu-item">  强制中文</div>
+                        <div class="menu-item">  保持原状态</div>
+                        <div class="menu-divider"></div>
+                        <div class="menu-item">✓ 开启 App 自动切换</div>
+                        <div class="menu-item dim">管理应用策略...</div>
+                    </div>
                 </div>
             </div>
         </main>
 
-        <!-- 功能展示区 -->
+        <!-- 功能区 -->
         <section id="features" class="features-grid">
             <div class="feature-card glass-card">
                 <div class="feature-icon">🎯</div>
                 <h3>按应用定制策略</h3>
-                <p>为每个应用设置专属策略：强制英文、强制中文或保持现状，灵活掌控每个工作流。</p>
+                <p>Xcode 强制英文、微信强制中文、终端保持原状 — 每个 App 独立配置，一次设定永久生效。</p>
             </div>
             <div class="feature-card glass-card">
-                <div class="feature-icon">🚀</div>
-                <h3>极速性能优化</h3>
-                <p>独家 TIS 缓存与 Dispatch 事件合并技术，彻底解决系统底层锁导致的输入卡顿。</p>
+                <div class="feature-icon">⚡</div>
+                <h3>乐观缓存切换</h3>
+                <p>TIS 切换成功后立即更新本地缓存，消除异步读取竞态，确保每次切换 App 输入法都正确响应。</p>
             </div>
             <div class="feature-card glass-card">
                 <div class="feature-icon">🛡️</div>
-                <h3>隐私与安全</h3>
-                <p>100% 运行在沙箱安全边界，无需开启“辅助功能”权限即可感知焦点切换，隐私无解。</p>
+                <h3>隐私优先</h3>
+                <p>无需辅助功能权限，基于 NSWorkspace 通知感知焦点切换，不读取任何键盘输入内容。</p>
             </div>
             <div class="feature-card glass-card">
-                <div class="feature-icon">✨</div>
-                <h3>极致简约 HUD</h3>
-                <p>重新设计的深色半透明 HUD，智能跟随鼠标所在屏幕。极简设计，不抢夺系统焦点。</p>
+                <div class="feature-icon">🪟</div>
+                <h3>策略管理窗口</h3>
+                <p>可视化管理所有已配置 App，支持修改策略、删除条目、一键添加当前前台应用。</p>
+            </div>
+            <div class="feature-card glass-card">
+                <div class="feature-icon">🔔</div>
+                <h3>HUD 实时提示</h3>
+                <p>切换时屏幕右上角短暂显示当前输入法（简体中文 / English），操作反馈清晰直观。</p>
+            </div>
+            <div class="feature-card glass-card">
+                <div class="feature-icon">⌨️</div>
+                <h3>CapsLock 兼容</h3>
+                <p>通过模拟系统级 CapsLock 事件完成切换，保留 macOS 原生 CapsLock 切换中英文的能力。</p>
             </div>
         </section>
 
-        <!-- 技术架构简述 -->
+        <!-- 技术亮点 -->
         <section class="tech-stack">
-            <h2 class="section-title">重新定义的切换逻辑</h2>
+            <h2 class="section-title">技术实现</h2>
             <div class="tech-items">
                 <div class="tech-item">
-                    <span class="tech-label">TIS 缓存</span>
-                    <p>通过缓存输入法状态 ID，减少 90% 的跨进程系统调用负担。</p>
+                    <span class="tech-label">TIS 乐观缓存</span>
+                    <p>切换成功后直接写入目标状态，避免 TIS 异步生效期间的缓存错误，彻底修复切换失效问题。</p>
                 </div>
                 <div class="tech-item">
-                    <span class="tech-label">事件去重</span>
-                    <p>自动过滤同应用重复激活事件，配合 WorkItem 合并快速 Cmd+Tab 操作。</p>
+                    <span class="tech-label">事件合并去重</span>
+                    <p>NSWorkspace 激活通知经 50ms DispatchWorkItem 合并，过滤同 App 重复事件，快速 Cmd+Tab 不卡顿。</p>
                 </div>
                 <div class="tech-item">
-                    <span class="tech-label">懒加载菜单</span>
-                    <p>菜单仅在点击时实时构建，消除应用切换时的 UI 主线程渲染压力。</p>
+                    <span class="tech-label">懒构建菜单</span>
+                    <p>NSMenuDelegate 实现菜单内容仅在点击时渲染，消除每次 App 切换时的 UI 主线程压力。</p>
                 </div>
             </div>
         </section>
 
-        <!-- 页面底部 (Footer) -->
+        <!-- 安装 -->
+        <section id="install" class="install-section">
+            <h2 class="section-title">快速安装</h2>
+            <div class="install-steps glass-card">
+                <div class="install-step">
+                    <span class="step-num">1</span>
+                    <p>下载 <code>TailInput-1.2.1.dmg</code>，打开后将 App 拖入 <strong>Applications</strong></p>
+                </div>
+                <div class="install-step">
+                    <span class="step-num">2</span>
+                    <p>首次运行，点击菜单栏 <strong>⌨️</strong> 图标确认正常</p>
+                </div>
+                <div class="install-step">
+                    <span class="step-num">3</span>
+                    <p>为常用 App 设置策略，开启 <strong>开机自启动</strong>，搞定</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
         <footer class="footer">
             <div class="footer-content">
-                <p>Designed with ❤️ for macOS.</p>
-                <p class="license">此项目基于 <a href="https://opensource.org/licenses/MIT">MIT License</a> 开源发布。版权所有 © 2026</p>
+                <p>TailInput — 为 macOS 用户打造 ⌨️</p>
+                <p class="license">基于 <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a> 开源 &middot; © 2026</p>
             </div>
         </footer>
     </div>

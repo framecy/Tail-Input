@@ -16,7 +16,6 @@ targets:
     platform: macOS
     sources:
       - path: Sources/SmartInputSwitcher
-        type: group
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.framed.TailInput

@@ -1,6 +1,6 @@
 import Cocoa
 
-class AppObserver {
+class AppObserver: NSObject {
     static let shared = AppObserver()
     
     var onAppActivated: ((String, String?) -> Void)?

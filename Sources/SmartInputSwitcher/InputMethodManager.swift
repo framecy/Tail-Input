@@ -9,7 +9,7 @@ enum AppInputStrategy: Int, Codable {
     case keepCurrent = 3
 }
 
-class InputMethodManager {
+class InputMethodManager: NSObject {
     static let shared = InputMethodManager()
 
     // ── 当前输入法状态缓存（布尔值，O(1) 读取）──
@@ -34,7 +34,8 @@ class InputMethodManager {
         set { UserDefaults.standard.set(newValue, forKey: Self.kUseCapsLockSimulationKey) }
     }
 
-    init() {
+    override init() {
+        super.init()
         refreshCachedInputSource()
         setupObserver()
     }
@@ -143,10 +144,12 @@ class InputMethodManager {
         let target = Unmanaged<TISInputSource>.fromOpaque(ptr).takeUnretainedValue()
         let result = TISSelectInputSource(target)
         if result == noErr {
-            refreshCachedInputSource()
-            NSLog("[TailInput] ✓ switched to %@", chinese ? "Chinese" : "English")
+            // 乐观更新：TISSelectInputSource 是异步生效的，立即 re-read 会拿到旧值。
+            // 这里直接写入目标值；TIS 通知到来后 handleInputMethodChange 会用真实值覆盖。
+            cachedIsChinese = chinese
+            NSLog("[TailInput] switched to %@", chinese ? "Chinese" : "English")
         } else {
-            NSLog("[TailInput] ✗ TISSelectInputSource failed: \(result)")
+            NSLog("[TailInput] TISSelectInputSource failed: %d", result)
         }
         // cfList 在此处释放（函数结束）
     }
