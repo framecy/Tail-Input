@@ -9,8 +9,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var welcomeController: WelcomeWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // ── 仅图标模式：让系统自动计算宽度，无多余空白 ──
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        // 固定 28pt：比 squareLength(22pt) 多给 6pt breathing room，
+        // 让 character.textbox 与 keyboard 两个图标视觉重量对等，切换时宽度不跳变
+        statusItem = NSStatusBar.system.statusItem(withLength: 28)
 
         updateStatusBarButton()
 
@@ -61,27 +62,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button else { return }
         let isChinese = InputMethodManager.shared.cachedIsChinese
 
-        // 中文：character.textbox  英文：keyboard
+        // 中文：character.textbox（笔画感）  英文：keyboard（直观）
         let symbolName = isChinese ? "character.textbox" : "keyboard"
 
-        // 使用 menuBarFont 尺寸保证与系统其他图标视觉一致
-        let pointSize: CGFloat = 14
-        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+        // 13pt medium weight 在 28pt 宽度内与系统原生图标视觉对齐
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
             .applying(NSImage.SymbolConfiguration(hierarchicalColor: .labelColor))
 
         if let icon = NSImage(systemSymbolName: symbolName, accessibilityDescription: isChinese ? "中文" : "英文")?
                 .withSymbolConfiguration(config) {
-            icon.isTemplate = true   // 模板图像：系统自动处理深/浅色及高亮
+            icon.isTemplate = true   // 模板图像：系统自动处理深/浅色及高亮状态
             button.image = icon
+            button.imagePosition = .imageOnly
             button.imageScaling = .scaleProportionallyDown
         } else {
-            // 兜底：Apple 等宽字符
+            // 兜底：等宽字符
             button.image = nil
             button.title = isChinese ? "中" : "En"
             button.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         }
 
-        button.title = ""            // 清除残留文字
+        button.title = ""
         button.attributedTitle = NSAttributedString()
     }
 

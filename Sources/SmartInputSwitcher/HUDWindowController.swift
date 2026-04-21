@@ -84,7 +84,8 @@ class HUDWindowController: NSWindowController {
     func showHUD(isChinese: Bool) {
         // 更新图标
         let symbolName = isChinese ? "character.textbox" : "keyboard"
-        let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .regular)
+        // semibold 在黑色背景上比 regular 更清晰
+        let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
         iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
 
@@ -114,7 +115,7 @@ class HUDWindowController: NSWindowController {
         window?.orderFront(nil)
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.15
+            context.duration = 0.12   // 从 0.15 降至 0.12，出现更敏捷
             self.window?.animator().alphaValue = 1.0
         }, completionHandler: { [weak self] in
             self?.resetHideTimer()

@@ -88,6 +88,8 @@ class InputMethodManager: NSObject {
         guard cachedIsChinese != chinese else { return }
 
         if useCapsLockSimulation && AXIsProcessTrusted() {
+            // 乐观更新：CapsLock 事件异步生效，提前写入目标状态让 UI 立即响应
+            cachedIsChinese = chinese
             simulateCapsLock()
             return
         }
@@ -214,11 +216,9 @@ class InputMethodManager: NSObject {
         refreshCachedInputSource()
         let isChinese = cachedIsChinese
 
+        // TIS 通知本身是单发事件（每次切换只触发一次），无需防抖。
+        // 直接同步通知 UI 让图标和 HUD 即时响应，消除额外的 50ms 感知延迟。
         inputChangeWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.onInputMethodChanged?(isChinese)
-        }
-        inputChangeWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        onInputMethodChanged?(isChinese)
     }
 }
