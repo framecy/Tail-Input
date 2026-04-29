@@ -11,7 +11,7 @@ BUILD_DIR="$PROJECT_DIR/build"
 STAGING_DIR="$BUILD_DIR/dmg_staging"
 
 # 读取版本号
-VERSION="${1:-$(defaults read "$PROJECT_DIR/Sources/SmartInputSwitcher/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "1.2.2")}"
+VERSION="${1:-$(defaults read "$PROJECT_DIR/Sources/SmartInputSwitcher/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "1.2.3")}"
 DMG_NAME="TailInput-${VERSION}"
 DMG_OUTPUT="$BUILD_DIR/${DMG_NAME}.dmg"
 

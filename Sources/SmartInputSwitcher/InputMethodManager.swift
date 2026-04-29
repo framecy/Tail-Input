@@ -14,10 +14,14 @@ class InputMethodManager: NSObject {
 
     // ── 当前输入法状态缓存（布尔值，O(1) 读取）──
     private var cachedInputSourceID: String?
+    private var cachedChineseInputSourceID: String?
+    private var cachedEnglishInputSourceID: String?
     var cachedIsChinese: Bool = false   // internal：AppDelegate / HUD 直接读取
 
-    // ── 防抖：UI 通知合并 ──
-    private var inputChangeWorkItem: DispatchWorkItem?
+    // ── CapsLock 切换校验：避免系统状态机与乐观缓存不同步 ──
+    private var pendingCapsLockTarget: Bool?
+    private var capsLockVerificationWorkItem: DispatchWorkItem?
+    private var lastDeliveredInputState: Bool?
 
     // ── 当前应用信息 ──
     var currentAppBundleIdentifier: String?
@@ -42,11 +46,38 @@ class InputMethodManager: NSObject {
 
     // MARK: - 中英文 ID 识别
 
-    private static let chineseKeywords = ["chinese", "pinyin", "sogou", "wubi",
-                                           "baidu", "shuangpin", "rime", "squirrel"]
+    private static let appleChineseInputSourceIDs: Set<String> = [
+        "com.apple.inputmethod.scim.itabc",
+        "com.apple.inputmethod.scim.pinyin",
+        "com.apple.inputmethod.scim.wbx",
+        "com.apple.inputmethod.tcim.pinyin",
+        "com.apple.inputmethod.tcim.zhuyin",
+        "com.apple.inputmethod.tcim.cangjie",
+    ]
+
+    private static let chineseIDPrefixes = [
+        "com.apple.inputmethod.scim.",
+        "com.apple.inputmethod.tcim.",
+    ]
+
+    private static let chineseKeywords = [
+        "chinese", "pinyin", "sogou", "wubi", "baidu", "shuangpin",
+        "rime", "squirrel", "cangjie", "zhuyin", "stroke", "itabc",
+    ]
+
+    private static let chineseNameKeywords = [
+        "拼音", "中文", "简体", "繁体", "五笔", "搜狗", "百度", "双拼",
+        "pinyin", "chinese", "wubi", "shuangpin", "cangjie", "zhuyin",
+    ]
 
     static func isChineseID(_ lowerId: String) -> Bool {
-        chineseKeywords.contains { lowerId.contains($0) }
+        if appleChineseInputSourceIDs.contains(lowerId) {
+            return true
+        }
+        if chineseIDPrefixes.contains(where: { lowerId.hasPrefix($0) }) {
+            return true
+        }
+        return chineseKeywords.contains { lowerId.contains($0) }
     }
 
     static func isEnglishLayoutID(_ lowerId: String) -> Bool {
@@ -56,9 +87,12 @@ class InputMethodManager: NSObject {
 
     // MARK: - 当前输入法状态
 
-    private func refreshCachedInputSource() {
+    @discardableResult
+    private func refreshCachedInputSource() -> Bool {
         guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
-            cachedInputSourceID = nil; cachedIsChinese = false; return
+            cachedInputSourceID = nil
+            cachedIsChinese = false
+            return false
         }
 
         let id: String? = {
@@ -73,10 +107,18 @@ class InputMethodManager: NSObject {
         if !isChinese, !Self.isEnglishLayoutID(lower),
            let ptr = TISGetInputSourceProperty(src, kTISPropertyLocalizedName) {
             let name = Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
-            let cnWords = ["拼音","中文","简体","繁体","五笔","搜狗","百度","双拼"]
-            isChinese = cnWords.contains { name.contains($0) }
+            let lowerName = name.lowercased()
+            isChinese = Self.chineseNameKeywords.contains {
+                name.contains($0) || lowerName.contains($0)
+            }
         }
         cachedIsChinese = isChinese
+        if isChinese {
+            cachedChineseInputSourceID = id
+        } else if Self.isEnglishLayoutID(lower) {
+            cachedEnglishInputSourceID = id
+        }
+        return isChinese
     }
 
     // MARK: - 公开切换入口
@@ -85,12 +127,12 @@ class InputMethodManager: NSObject {
     func switchToChinese() { switchTo(chinese: true) }
 
     private func switchTo(chinese: Bool) {
+        refreshCachedInputSource()
         guard cachedIsChinese != chinese else { return }
 
         if useCapsLockSimulation && AXIsProcessTrusted() {
             // 乐观更新：CapsLock 事件异步生效，提前写入目标状态让 UI 立即响应
-            cachedIsChinese = chinese
-            simulateCapsLock()
+            switchViaCapsLock(chinese: chinese)
             return
         }
         switchViaTIS(chinese: chinese)
@@ -99,6 +141,11 @@ class InputMethodManager: NSObject {
     // MARK: - TIS 切换（每次获取新鲜列表，避免缓存 TISInputSource 指针悬空）
 
     private func switchViaTIS(chinese: Bool) {
+        if let cachedID = chinese ? cachedChineseInputSourceID : cachedEnglishInputSourceID,
+           selectCachedInputSource(id: cachedID, chinese: chinese) {
+            return
+        }
+
         // 注意：所有对 rawPtr 的使用必须在 cfList 存活期间完成，
         // 不可将 rawPtr 存出函数范围，否则 CFArray 释放后指针悬空。
         let filter = [kTISPropertyInputSourceIsSelectCapable as String: true] as CFDictionary
@@ -111,7 +158,9 @@ class InputMethodManager: NSObject {
 
         // 两级优先级：精确匹配 > 同类兜底
         var primaryPtr: UnsafeRawPointer? = nil
+        var primaryID: String?
         var fallbackPtr: UnsafeRawPointer? = nil
+        var fallbackID: String?
 
         for i in 0..<count {
             guard let rawPtr = CFArrayGetValueAtIndex(cfList, i) else { continue }
@@ -125,15 +174,19 @@ class InputMethodManager: NSObject {
                 // Apple Pinyin 是最优中文源
                 if lower == "com.apple.inputmethod.scim.itabc" ||
                    lower == "com.apple.inputmethod.scim.pinyin" {
-                    primaryPtr = rawPtr; break
+                    primaryPtr = rawPtr; primaryID = id; break
                 }
-                if Self.isChineseID(lower), fallbackPtr == nil { fallbackPtr = rawPtr }
+                if Self.isChineseID(lower), fallbackPtr == nil {
+                    fallbackPtr = rawPtr; fallbackID = id
+                }
             } else {
                 // 严格 ABC 是最优英文源
                 if lower == "com.apple.keylayout.abc" {
-                    primaryPtr = rawPtr; break
+                    primaryPtr = rawPtr; primaryID = id; break
                 }
-                if Self.isEnglishLayoutID(lower), fallbackPtr == nil { fallbackPtr = rawPtr }
+                if Self.isEnglishLayoutID(lower), fallbackPtr == nil {
+                    fallbackPtr = rawPtr; fallbackID = id
+                }
             }
         }
 
@@ -141,28 +194,109 @@ class InputMethodManager: NSObject {
             NSLog("[TailInput] No \(chinese ? "Chinese" : "English") source found in \(count) sources")
             return
         }
+        let selectedID = primaryID ?? fallbackID
 
         // TISSelectInputSource 调用必须在 cfList 存活期间（此时 rawPtr 仍有效）
         let target = Unmanaged<TISInputSource>.fromOpaque(ptr).takeUnretainedValue()
-        let result = TISSelectInputSource(target)
-        if result == noErr {
-            // 乐观更新：TISSelectInputSource 是异步生效的，立即 re-read 会拿到旧值。
-            // 这里直接写入目标值；TIS 通知到来后 handleInputMethodChange 会用真实值覆盖。
-            cachedIsChinese = chinese
-            NSLog("[TailInput] switched to %@", chinese ? "Chinese" : "English")
-        } else {
+        let result = selectInputSource(target, id: selectedID, chinese: chinese)
+        if result != noErr {
             NSLog("[TailInput] TISSelectInputSource failed: %d", result)
         }
         // cfList 在此处释放（函数结束）
     }
 
+    private func selectCachedInputSource(id: String, chinese: Bool) -> Bool {
+        let filter = [
+            kTISPropertyInputSourceID as String: id,
+            kTISPropertyInputSourceIsSelectCapable as String: true,
+        ] as CFDictionary
+
+        guard let cfList = TISCreateInputSourceList(filter, false)?.takeRetainedValue(),
+              CFArrayGetCount(cfList) > 0,
+              let rawPtr = CFArrayGetValueAtIndex(cfList, 0) else {
+            clearCachedTargetID(chinese: chinese)
+            return false
+        }
+
+        let source = Unmanaged<TISInputSource>.fromOpaque(rawPtr).takeUnretainedValue()
+        if selectInputSource(source, id: id, chinese: chinese) == noErr {
+            return true
+        }
+
+        clearCachedTargetID(chinese: chinese)
+        return false
+    }
+
+    @discardableResult
+    private func selectInputSource(_ source: TISInputSource, id: String?, chinese: Bool) -> OSStatus {
+        let result = TISSelectInputSource(source)
+        if result == noErr {
+            // 乐观更新：TISSelectInputSource 是异步生效的，立即 re-read 会拿到旧值。
+            // 这里直接写入目标值；TIS 通知到来后 handleInputMethodChange 会用真实值覆盖。
+            cachedIsChinese = chinese
+            cachedInputSourceID = id
+            if chinese {
+                cachedChineseInputSourceID = id
+            } else {
+                cachedEnglishInputSourceID = id
+            }
+            deliverInputMethodChanged(chinese)
+            NSLog("[TailInput] switched to %@", chinese ? "Chinese" : "English")
+        }
+        return result
+    }
+
+    private func clearCachedTargetID(chinese: Bool) {
+        if chinese {
+            cachedChineseInputSourceID = nil
+        } else {
+            cachedEnglishInputSourceID = nil
+        }
+    }
+
     // MARK: - CapsLock 模拟
+
+    private func switchViaCapsLock(chinese: Bool) {
+        pendingCapsLockTarget = chinese
+        cachedIsChinese = chinese
+        deliverInputMethodChanged(chinese)
+        simulateCapsLock()
+        scheduleCapsLockVerification(target: chinese, retriesRemaining: 1)
+    }
 
     private func simulateCapsLock() {
         let src = CGEventSource(stateID: .hidSystemState)
         let kVK_CapsLock: CGKeyCode = 0x39
         CGEvent(keyboardEventSource: src, virtualKey: kVK_CapsLock, keyDown: true)?.post(tap: .cghidEventTap)
         CGEvent(keyboardEventSource: src, virtualKey: kVK_CapsLock, keyDown: false)?.post(tap: .cghidEventTap)
+    }
+
+    private func scheduleCapsLockVerification(target: Bool, retriesRemaining: Int) {
+        capsLockVerificationWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+
+            self.refreshCachedInputSource()
+            if self.cachedIsChinese == target {
+                self.pendingCapsLockTarget = nil
+                self.deliverInputMethodChanged(target)
+                return
+            }
+
+            if retriesRemaining > 0 {
+                NSLog("[TailInput] CapsLock switch verification failed, retrying")
+                self.cachedIsChinese = target
+                self.deliverInputMethodChanged(target)
+                self.simulateCapsLock()
+                self.scheduleCapsLockVerification(target: target, retriesRemaining: retriesRemaining - 1)
+            } else {
+                NSLog("[TailInput] CapsLock switch verification failed, falling back to TIS")
+                self.pendingCapsLockTarget = nil
+                self.switchViaTIS(chinese: target)
+            }
+        }
+        capsLockVerificationWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }
 
     // MARK: - 策略（委托 ConfiguredAppStore）
@@ -216,9 +350,18 @@ class InputMethodManager: NSObject {
         refreshCachedInputSource()
         let isChinese = cachedIsChinese
 
-        // TIS 通知本身是单发事件（每次切换只触发一次），无需防抖。
-        // 直接同步通知 UI 让图标和 HUD 即时响应，消除额外的 50ms 感知延迟。
-        inputChangeWorkItem?.cancel()
+        if pendingCapsLockTarget == isChinese {
+            pendingCapsLockTarget = nil
+            capsLockVerificationWorkItem?.cancel()
+            capsLockVerificationWorkItem = nil
+        }
+
+        deliverInputMethodChanged(isChinese)
+    }
+
+    private func deliverInputMethodChanged(_ isChinese: Bool) {
+        guard lastDeliveredInputState != isChinese else { return }
+        lastDeliveredInputState = isChinese
         onInputMethodChanged?(isChinese)
     }
 }

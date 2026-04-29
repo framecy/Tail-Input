@@ -6,6 +6,7 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
     private var tableView: NSTableView!
     private var emptyLabel: NSTextField!
     private var apps: [ConfiguredApp] = []
+    private var iconCache: [String: NSImage] = [:]
 
     // MARK: - 策略选项标题（与 AppInputStrategy 保持一致）
     private let strategyTitles: [(AppInputStrategy, String)] = [
@@ -167,11 +168,19 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - 辅助
 
     private func appIcon(for bundleId: String) -> NSImage {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
-            return icon
+        if let cached = iconCache[bundleId] {
+            return cached
         }
-        return NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
+
+        let icon: NSImage
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+            icon = NSWorkspace.shared.icon(forFile: url.path)
+        } else {
+            icon = NSImage(systemSymbolName: "app", accessibilityDescription: nil) ?? NSImage()
+        }
+
+        iconCache[bundleId] = icon
+        return icon
     }
 }
 

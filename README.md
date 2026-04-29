@@ -2,7 +2,7 @@
 
 > 按应用自动切换输入法的 macOS 菜单栏工具 — 轻量、无感知、零配置即用。
 
-**版本：v1.2.2** · macOS 13.0+ · Apple Silicon & Intel
+**版本：v1.2.3** · macOS 13.0+ · Apple Silicon & Intel
 
 ---
 
@@ -24,7 +24,7 @@
 
 ### DMG（推荐）
 
-1. 下载 `TailInput-1.2.2.dmg`
+1. 下载 `TailInput-1.2.3.dmg`
 2. 打开后将 `TailInput.app` 拖入 `Applications`
 3. 首次运行在「系统设置 → 隐私与安全 → 辅助功能」授权（仅 CapsLock 模式需要）
 
@@ -98,6 +98,13 @@ WelcomeWindowController.swift → 首次运行引导
 ---
 
 ## 更新记录
+
+### v1.2.3
+- 修复：补全 Apple 简体拼音等中文输入源识别，解决 CapsLock 手动切回中文偶发需要多次点击的问题
+- 优化：CapsLock 兼容模式增加快速校验、一次重试与 TIS 兜底，避免系统状态机与本地缓存不同步
+- 优化：缓存最近成功的中英文输入源 ID，减少重复扫描输入源列表
+- 优化：App 切换事件合并窗口 20ms → 8ms，降低切换感知延迟
+- 优化：策略管理窗口缓存应用图标，减少列表刷新开销
 
 ### v1.2.2
 - 优化：AppObserver debounce 50ms → 20ms，Cmd+Tab 切换响应更快
