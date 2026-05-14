@@ -13,7 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Clicking the Dock icon while running re-opens the settings window
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { AppListWindowController.shared.showWindow() }
+        if !flag { MainWindowController.shared.showWindow() }
         return true
     }
 
@@ -52,17 +52,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppObserver.shared.start()
 
-        // 使用 NSMenuDelegate 实现懒构建
-        let menu = NSMenu()
-        menu.delegate = self
-        statusItem.menu = menu
+        // 左键点击唤起主窗口；右键仍弹出菜单
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.target = self
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         // ── 启动窗口：首次运行显示 Onboarding，否则直接打开设置窗口 ──
         if !UserDefaults.standard.bool(forKey: "HasSeenWelcomePagev2") {
             welcomeController = WelcomeWindowController()
             welcomeController?.showWindow(nil)
         } else {
-            AppListWindowController.shared.showWindow()
+            MainWindowController.shared.showWindow()
         }
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -218,8 +218,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func statusItemClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp {
+            // 右键弹出菜单
+            let menu = NSMenu()
+            menu.delegate = self
+            buildMenu(menu)
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        } else {
+            MainWindowController.shared.showWindow()
+        }
+    }
+
     @objc func openAppList() {
-        AppListWindowController.shared.showWindow()
+        MainWindowController.shared.showWindow()
     }
 
     @objc func quit() {
