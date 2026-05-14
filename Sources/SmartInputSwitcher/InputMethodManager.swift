@@ -327,6 +327,20 @@ class InputMethodManager: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
     }
 
+    // MARK: - 全局默认策略（UserDefaults 持久化，默认切英文）
+
+    var globalDefaultStrategy: AppInputStrategy {
+        get {
+            let raw = UserDefaults.standard.integer(forKey: "GlobalDefaultStrategy")
+            let s = AppInputStrategy(rawValue: raw) ?? .forceEnglish
+            // globalDefault 不能作为全局值本身，回退到英文
+            return (s == .globalDefault) ? .forceEnglish : s
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "GlobalDefaultStrategy")
+        }
+    }
+
     // MARK: - 策略（委托 ConfiguredAppStore）
 
     func applyStrategy(for bundleIdentifier: String, appName: String?) {
@@ -338,9 +352,16 @@ class InputMethodManager: NSObject {
               appName ?? bundleIdentifier, strategy.rawValue, cachedIsChinese ? 1 : 0)
 
         switch strategy {
-        case .globalDefault, .forceEnglish: switchToEnglish()
-        case .forceChinese:                 switchToChinese()
-        case .keepCurrent:                  break
+        case .globalDefault:
+            switch globalDefaultStrategy {
+            case .forceEnglish: switchToEnglish()
+            case .forceChinese: switchToChinese()
+            case .keepCurrent:  break
+            default:            switchToEnglish()
+            }
+        case .forceEnglish: switchToEnglish()
+        case .forceChinese: switchToChinese()
+        case .keepCurrent:  break
         }
 
         onAppChanged?()

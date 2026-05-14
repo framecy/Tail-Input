@@ -129,6 +129,7 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
 
     private var tableView: NSTableView!
     private var emptyStateView: NSView!
+    private var globalStrategyControl: NSSegmentedControl!
     private var apps: [ConfiguredApp] = []
     private var iconCache: [String: NSImage] = [:]
 
@@ -192,6 +193,15 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
         let sep1 = makeSeparator()
         contentView.addSubview(sep1)
 
+        // Global default bar
+        let globalBar = buildGlobalBar()
+        globalBar.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(globalBar)
+
+        // Separator below global bar
+        let sep1b = makeSeparator()
+        contentView.addSubview(sep1b)
+
         // Scroll view + table
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -239,7 +249,16 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
             sep1.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             sep1.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
 
-            scrollView.topAnchor.constraint(equalTo: sep1.bottomAnchor),
+            globalBar.topAnchor.constraint(equalTo: sep1.bottomAnchor),
+            globalBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            globalBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            globalBar.heightAnchor.constraint(equalToConstant: 44),
+
+            sep1b.topAnchor.constraint(equalTo: globalBar.bottomAnchor),
+            sep1b.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            sep1b.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+
+            scrollView.topAnchor.constraint(equalTo: sep1b.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: sep2.topAnchor),
@@ -393,6 +412,53 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
         return view
     }
 
+    private func buildGlobalBar() -> NSView {
+        let view = NSView()
+
+        let label = NSTextField(labelWithString: "其他应用默认")
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+
+        globalStrategyControl = NSSegmentedControl(
+            labels: ["切换为英文", "切换为中文", "保持不变"],
+            trackingMode: .selectOne,
+            target: self,
+            action: #selector(globalStrategyChanged(_:))
+        )
+        globalStrategyControl.controlSize = .small
+        globalStrategyControl.font = .systemFont(ofSize: 11.5)
+        globalStrategyControl.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(globalStrategyControl)
+
+        // Reflect current saved value
+        switch InputMethodManager.shared.globalDefaultStrategy {
+        case .forceChinese: globalStrategyControl.selectedSegment = 1
+        case .keepCurrent:  globalStrategyControl.selectedSegment = 2
+        default:            globalStrategyControl.selectedSegment = 0
+        }
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+
+            globalStrategyControl.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            globalStrategyControl.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+        return view
+    }
+
+    @objc private func globalStrategyChanged(_ sender: NSSegmentedControl) {
+        let strategy: AppInputStrategy
+        switch sender.selectedSegment {
+        case 1:  strategy = .forceChinese
+        case 2:  strategy = .keepCurrent
+        default: strategy = .forceEnglish
+        }
+        InputMethodManager.shared.globalDefaultStrategy = strategy
+    }
+
     private func makeSeparator() -> NSBox {
         let box = NSBox()
         box.boxType = .separator
@@ -406,6 +472,13 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
         apps = ConfiguredAppStore.shared.all()
         tableView?.reloadData()
         emptyStateView?.isHidden = !apps.isEmpty
+
+        // Keep global bar in sync with stored value
+        switch InputMethodManager.shared.globalDefaultStrategy {
+        case .forceChinese: globalStrategyControl?.selectedSegment = 1
+        case .keepCurrent:  globalStrategyControl?.selectedSegment = 2
+        default:            globalStrategyControl?.selectedSegment = 0
+        }
     }
 
     // MARK: - Actions
