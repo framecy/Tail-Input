@@ -2,7 +2,7 @@
 
 > 按应用自动切换输入法的 macOS 工具 — 轻量、无感知、零配置即用。
 
-**版本：v1.3.0** · macOS 13.0+ · Apple Silicon & Intel · [下载](https://github.com/framecy/Tail-Input/releases)
+**版本：v1.3.1** · macOS 13.0+ · Apple Silicon & Intel · [下载](https://github.com/framecy/Tail-Input/releases)
 
 ---
 
@@ -24,7 +24,7 @@
 
 ### DMG（推荐）
 
-1. 下载 [`Tail-Input-1.3.0.dmg`](https://github.com/framecy/Tail-Input/releases/latest)
+1. 下载 [`Tail-Input-1.3.1.dmg`](https://github.com/framecy/Tail-Input/releases/latest)
 2. 打开后将 `Tail Input.app` 拖入 `Applications`
 3. 首次运行完成 Onboarding 引导即可
 
@@ -96,6 +96,11 @@ WelcomeWindowController.swift    → 首次运行引导
 ---
 
 ## 更新记录
+
+### v1.3.1
+- 重构：设置窗口改为双栏布局 — 左侧边栏（开关 / 全局默认 / 关于）+ 右侧内容区，所有界面无弹窗
+- 新增：点击状态栏图标直接唤起主窗口；右键点击仍弹出快捷菜单
+- 优化：左侧底部展示 App 图标、版本号、MIT 协议与 GitHub 入口，一目了然
 
 ### v1.3.0
 - 新增：应用规则选择器 — 可从所有已安装应用中搜索并配置策略，支持按名称和 Bundle ID 过滤
