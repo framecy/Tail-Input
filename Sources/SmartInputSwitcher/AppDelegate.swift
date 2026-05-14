@@ -8,6 +8,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var hudController: HUDWindowController?
     var welcomeController: WelcomeWindowController?
 
+    // Keep running when all windows are closed (menu bar app remains active)
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    // Clicking the Dock icon while running re-opens the settings window
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { AppListWindowController.shared.showWindow() }
+        return true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 固定 28pt：比 squareLength(22pt) 多给 6pt breathing room，
         // 让 character.textbox 与 keyboard 两个图标视觉重量对等，切换时宽度不跳变
@@ -48,12 +57,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
-        // ── Onboarding：首次运行显示欢迎页面 ──
+        // ── 启动窗口：首次运行显示 Onboarding，否则直接打开设置窗口 ──
         if !UserDefaults.standard.bool(forKey: "HasSeenWelcomePagev2") {
             welcomeController = WelcomeWindowController()
             welcomeController?.showWindow(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            AppListWindowController.shared.showWindow()
         }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - 状态栏按钮更新（仅图标，随系统深色/浅色自动适配）

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TailInput ⌨️ — macOS 智能输入法切换器</title>
-    <meta name="description" content="TailInput — 按应用自动切换输入法的 macOS 菜单栏工具。轻量、无感知、零配置即用。">
+    <title>Tail Input ⌨️ — macOS 智能输入法切换器</title>
+    <meta name="description" content="Tail Input — 按应用自动切换输入法的 macOS 工具。轻量、无感知、零配置即用。">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -19,29 +19,29 @@
         <header class="navbar">
             <div class="logo">
                 <span class="logo-emoji">⌨️</span>
-                TailInput
+                Tail Input
             </div>
             <nav class="nav-links">
                 <a href="#features">功能</a>
                 <a href="#install">安装</a>
-                <a href="https://github.com/framecy/SimpleSwitch" target="_blank" rel="noopener">GitHub</a>
+                <a href="https://github.com/framecy/Tail-Input" target="_blank" rel="noopener">GitHub</a>
             </nav>
         </header>
 
         <!-- 主视觉区 -->
         <main class="hero">
             <div class="hero-content">
-                <div class="badge">v1.2.3 &middot; 开源 &middot; macOS 13+</div>
+                <div class="badge">v1.3.0 &middot; 开源 &middot; macOS 13+</div>
                 <h1 class="hero-title">告别输入法<br><span class="text-gradient">手动切换</span></h1>
                 <p class="hero-subtitle">
                     切换 App 时自动切换输入法 — 英文 IDE、中文微信，一切自如。
                     基于底层 TIS 乐观缓存，无需辅助功能权限，隐私优先。
                 </p>
                 <div class="hero-actions">
-                    <a href="https://github.com/framecy/SimpleSwitch/releases" class="btn btn-primary">
-                        ↓ 下载 TailInput
+                    <a href="https://github.com/framecy/Tail-Input/releases/latest" class="btn btn-primary">
+                        ↓ 下载 v1.3.0
                     </a>
-                    <a href="https://github.com/framecy/SimpleSwitch" class="btn btn-secondary">
+                    <a href="https://github.com/framecy/Tail-Input" class="btn btn-secondary">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.379.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/>
                         </svg>
@@ -62,13 +62,14 @@
                         </div>
                     </div>
                     <div class="menubar-menu">
-                        <div class="menu-item menu-header">当前应用：Xcode</div>
-                        <div class="menu-item selected">✓ 默认（切回英文）</div>
-                        <div class="menu-item">  强制中文</div>
-                        <div class="menu-item">  保持原状态</div>
+                        <div class="menu-item menu-header">Xcode</div>
+                        <div class="menu-item selected">✓ 跟随全局设置</div>
+                        <div class="menu-item">  切换为英文</div>
+                        <div class="menu-item">  切换为中文</div>
+                        <div class="menu-item">  保持不变</div>
                         <div class="menu-divider"></div>
-                        <div class="menu-item">✓ 开启 App 自动切换</div>
-                        <div class="menu-item dim">管理应用策略...</div>
+                        <div class="menu-item">✓ 自动切换输入法</div>
+                        <div class="menu-item dim">应用输入法规则…</div>
                     </div>
                 </div>
             </div>
@@ -92,9 +93,9 @@
                 <p>无需辅助功能权限，基于 NSWorkspace 通知感知焦点切换，不读取任何键盘输入内容。</p>
             </div>
             <div class="feature-card glass-card">
-                <div class="feature-icon">🪟</div>
-                <h3>策略管理窗口</h3>
-                <p>可视化管理所有已配置 App，支持修改策略、删除条目、一键添加当前前台应用。</p>
+                <div class="feature-icon">🔍</div>
+                <h3>应用选择器</h3>
+                <p>从全部已安装应用中搜索并选择，支持按名称和 Bundle ID 过滤，不局限于当前前台应用。</p>
             </div>
             <div class="feature-card glass-card">
                 <div class="feature-icon">🔔</div>
@@ -133,7 +134,7 @@
             <div class="install-steps glass-card">
                 <div class="install-step">
                     <span class="step-num">1</span>
-                    <p>下载 <code>TailInput-1.2.3.dmg</code>，打开后将 App 拖入 <strong>Applications</strong></p>
+                    <p>下载 <a href="https://github.com/framecy/Tail-Input/releases/latest"><code>Tail-Input-1.3.0.dmg</code></a>，打开后将 App 拖入 <strong>Applications</strong></p>
                 </div>
                 <div class="install-step">
                     <span class="step-num">2</span>
@@ -149,8 +150,8 @@
         <!-- Footer -->
         <footer class="footer">
             <div class="footer-content">
-                <p>TailInput — 为 macOS 用户打造 ⌨️</p>
-                <p class="license">基于 <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a> 开源 &middot; © 2026</p>
+                <p>Tail Input — 为 macOS 用户打造 ⌨️ &middot; <a href="https://github.com/framecy/Tail-Input" target="_blank" rel="noopener">GitHub</a></p>
+                <p class="license">基于 <a href="https://opensource.org/licenses/MIT" target="_blank">MIT License</a> 开源 &middot; © 2026 framed</p>
             </div>
         </footer>
     </div>
