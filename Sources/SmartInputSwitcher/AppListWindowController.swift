@@ -411,38 +411,21 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Actions
 
     @objc private func addCurrentApp() {
-        guard let bundleId = InputMethodManager.shared.currentAppBundleIdentifier,
-              !bundleId.isEmpty else { return }
-        let appName = InputMethodManager.shared.currentAppName ?? bundleId
-
-        // Already configured — scroll to the existing row
-        if let idx = apps.firstIndex(where: { $0.bundleId == bundleId }) {
-            tableView.scrollRowToVisible(idx)
-            return
-        }
-
-        // Strategy picker sheet
-        let alert = NSAlert()
-        alert.messageText = "为「\(appName)」选择输入法规则"
-        alert.informativeText = "切换到此应用时，Tail Input 应如何调整输入法？"
-        alert.addButton(withTitle: "切换为英文")
-        alert.addButton(withTitle: "切换为中文")
-        alert.addButton(withTitle: "保持不变")
-        alert.addButton(withTitle: "取消")
-
         guard let window = window else { return }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard let self = self else { return }
-            let strategy: AppInputStrategy
-            switch response {
-            case .alertFirstButtonReturn:  strategy = .forceEnglish
-            case .alertSecondButtonReturn: strategy = .forceChinese
-            case .alertThirdButtonReturn:  strategy = .keepCurrent
-            default: return
-            }
+
+        // Open app picker sheet; pre-select the current front app
+        let picker = AppPickerSheetController(
+            preselectedBundleId: InputMethodManager.shared.currentAppBundleIdentifier
+        )
+        picker.completion = { [weak self] bundleId, appName, strategy in
             ConfiguredAppStore.shared.setStrategy(strategy, for: bundleId, appName: appName)
-            self.reload()
+            self?.reload()
+            // Scroll to the newly added row
+            if let idx = self?.apps.firstIndex(where: { $0.bundleId == bundleId }) {
+                self?.tableView.scrollRowToVisible(idx)
+            }
         }
+        window.beginSheet(picker.window!) { _ in }
     }
 
     @objc private func strategyChanged(_ sender: NSPopUpButton) {
@@ -462,7 +445,7 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func openGitHub() {
-        if let url = URL(string: "https://github.com/framed/TailInput") {
+        if let url = URL(string: "https://github.com/framecy/Tail-Input") {
             NSWorkspace.shared.open(url)
         }
     }
