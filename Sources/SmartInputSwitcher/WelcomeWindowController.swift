@@ -58,7 +58,7 @@ class WelcomeWindowController: NSWindowController {
         
         switch index {
         case 0:
-            let title = createLabel("欢迎使用 TailInput", size: 24, weight: .bold)
+            let title = createLabel("欢迎使用 Tail Input", size: 24, weight: .bold)
             let desc = createLabel("极致顺滑的 macOS 智能输入法切换工具。\n自动感知应用状态，让输入不再断档。", size: 14)
             desc.alignment = .center
             

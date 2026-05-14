@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-# ── TailInput DMG 打包脚本 ──
+# ── Tail Input DMG 打包脚本 ──
 # 用法: ./build_dmg.sh [version]  (默认从 Info.plist 读取)
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_FILE="$PROJECT_DIR/TailInput.xcodeproj"
+PROJECT_FILE="$PROJECT_DIR/Tail Input.xcodeproj"
 SCHEME="TailInput"
 BUILD_DIR="$PROJECT_DIR/build"
 STAGING_DIR="$BUILD_DIR/dmg_staging"
@@ -28,7 +28,7 @@ PRODUCTS_DIR=$(xcodebuild -project "$PROJECT_FILE" \
     -configuration Release \
     -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $NF}')
 
-APP_PATH="$PRODUCTS_DIR/TailInput.app"
+APP_PATH="$PRODUCTS_DIR/Tail Input.app"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "❌ 编译失败：找不到 $APP_PATH"
@@ -46,7 +46,7 @@ cp -R "$APP_PATH" "$STAGING_DIR/"
 cp "$PROJECT_DIR/README.md" "$STAGING_DIR/使用说明.md"
 ln -s /Applications "$STAGING_DIR/Applications"
 
-echo "   ├── TailInput.app"
+echo "   ├── Tail Input.app"
 echo "   ├── 使用说明.md"
 echo "   └── Applications → /Applications"
 
@@ -56,7 +56,7 @@ mkdir -p "$BUILD_DIR"
 rm -f "$DMG_OUTPUT"
 
 hdiutil create \
-    -volname "TailInput $VERSION" \
+    -volname "Tail Input $VERSION" \
     -srcfolder "$STAGING_DIR" \
     -ov \
     -format UDZO \
