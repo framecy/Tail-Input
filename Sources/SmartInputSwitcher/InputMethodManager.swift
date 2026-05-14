@@ -85,6 +85,25 @@ class InputMethodManager: NSObject {
         return !isChineseID(lowerId)
     }
 
+    // MARK: - 纯函数：输入法状态判断（internal 以支持单元测试）
+
+    /// 根据 TIS source ID 和 mode ID 判断最终的中英文状态。
+    /// modeID 含 "roman" 时，即使 sourceID 被识别为中文，也判定为英文（in-source 英文模式）。
+    static func detectInputMethodState(sourceID: String, modeID: String?) -> Bool {
+        let lower = sourceID.lowercased()
+        var isChinese = isChineseID(lower)
+        if isChinese, let mode = modeID, mode.lowercased().contains("roman") {
+            isChinese = false
+        }
+        return isChinese
+    }
+
+    /// 从本地化名称判断是否为中文输入法（sourceID 识别失败时的兜底）。
+    static func detectChineseByLocalizedName(_ name: String) -> Bool {
+        let lowerName = name.lowercased()
+        return chineseNameKeywords.contains { name.contains($0) || lowerName.contains($0) }
+    }
+
     // MARK: - 当前输入法状态
 
     @discardableResult
@@ -112,6 +131,14 @@ class InputMethodManager: NSObject {
                 name.contains($0) || lowerName.contains($0)
             }
         }
+
+        // macOS 26：委托 detectInputMethodState 处理 in-source 英文模式（含 modeID 检测）
+        let modeID: String? = {
+            guard let ptr = TISGetInputSourceProperty(src, kTISPropertyInputModeID) else { return nil }
+            return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
+        }()
+        isChinese = Self.detectInputMethodState(sourceID: id ?? "", modeID: modeID)
+
         cachedIsChinese = isChinese
         if isChinese {
             cachedChineseInputSourceID = id
@@ -296,7 +323,8 @@ class InputMethodManager: NSObject {
             }
         }
         capsLockVerificationWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        // macOS 26 CapsLock 生效更快，从 120ms 降至 80ms
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
     }
 
     // MARK: - 策略（委托 ConfiguredAppStore）
@@ -339,9 +367,16 @@ class InputMethodManager: NSObject {
 
     private func setupObserver() {
         let nc = DistributedNotificationCenter.default()
+        // 监听 TIS 输入源切换（跨源切换，如拼音 ↔ ABC 键盘）
         nc.addObserver(self,
                        selector: #selector(handleInputMethodChange),
                        name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+                       object: nil)
+        // macOS 26：Apple 拼音 CapsLock 切换中/英时只改变 in-source 模式，
+        // 不触发上面的通知，需额外监听此通知保持状态同步
+        nc.addObserver(self,
+                       selector: #selector(handleInputMethodChange),
+                       name: NSNotification.Name("com.apple.inputmethod.currentInputModeDidChange"),
                        object: nil)
     }
 

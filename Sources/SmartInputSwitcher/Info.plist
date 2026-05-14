@@ -5,9 +5,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.framed.TailInput</string>
 	<key>CFBundleName</key>
-	<string>TailInput</string>
+	<string>Tail Input</string>
 	<key>CFBundleDisplayName</key>
-	<string>TailInput</string>
+	<string>Tail Input</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

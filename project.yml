@@ -1,4 +1,4 @@
-name: TailInput
+name: Tail Input
 options:
   bundleIdPrefix: com.framed
   deploymentTarget:
@@ -22,6 +22,22 @@ targets:
         INFOPLIST_FILE: Sources/SmartInputSwitcher/Info.plist
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
-        PRODUCT_NAME: TailInput
+        PRODUCT_NAME: Tail Input
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  TailInputTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/TailInputTests
+    dependencies:
+      - target: TailInput
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.framed.TailInputTests
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        GENERATE_INFOPLIST_FILE: YES
