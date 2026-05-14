@@ -90,76 +90,77 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        // 动态生成部分
+        // ── 当前应用 + 策略选择 ──
         if let appName = InputMethodManager.shared.currentAppName,
            let bundleId = InputMethodManager.shared.currentAppBundleIdentifier {
 
-            let titleItem = NSMenuItem(title: "[+] 当前前台应用: \(appName)", action: nil, keyEquivalent: "")
-            titleItem.isEnabled = false
-            menu.addItem(titleItem)
+            // Section header: app name (non-interactive)
+            let appItem = NSMenuItem(title: appName, action: nil, keyEquivalent: "")
+            appItem.isEnabled = false
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+                let icon = NSWorkspace.shared.icon(forFile: url.path)
+                icon.size = NSSize(width: 16, height: 16)
+                appItem.image = icon
+            }
+            menu.addItem(appItem)
 
             let strategy = InputMethodManager.shared.getStrategy(for: bundleId)
 
-            let s0 = NSMenuItem(title: "    默认 (切回英文)", action: #selector(setStrategy(_:)), keyEquivalent: "")
-            s0.tag = AppInputStrategy.globalDefault.rawValue
-            s0.state = strategy == .globalDefault ? .on : .off
-            menu.addItem(s0)
-
-            let s1 = NSMenuItem(title: "    强制为英文", action: #selector(setStrategy(_:)), keyEquivalent: "")
-            s1.tag = AppInputStrategy.forceEnglish.rawValue
-            s1.state = strategy == .forceEnglish ? .on : .off
-            menu.addItem(s1)
-
-            let s2 = NSMenuItem(title: "    强制为中文", action: #selector(setStrategy(_:)), keyEquivalent: "")
-            s2.tag = AppInputStrategy.forceChinese.rawValue
-            s2.state = strategy == .forceChinese ? .on : .off
-            menu.addItem(s2)
-
-            let s3 = NSMenuItem(title: "    保持原状态", action: #selector(setStrategy(_:)), keyEquivalent: "")
-            s3.tag = AppInputStrategy.keepCurrent.rawValue
-            s3.state = strategy == .keepCurrent ? .on : .off
-            menu.addItem(s3)
+            // Strategy options — indented, with SF Symbol icons
+            let strategies: [(AppInputStrategy, String, String)] = [
+                (.globalDefault, "跟随全局设置", "circle"),
+                (.forceEnglish,  "切换为英文",   "keyboard"),
+                (.forceChinese,  "切换为中文",   "character.textbox"),
+                (.keepCurrent,   "保持不变",     "arrow.uturn.backward"),
+            ]
+            let iconCfg = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+            for (s, title, symbol) in strategies {
+                let item = NSMenuItem(title: title,
+                                      action: #selector(setStrategy(_:)),
+                                      keyEquivalent: "")
+                item.tag = s.rawValue
+                item.state = strategy == s ? .on : .off
+                item.indentationLevel = 1
+                item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+                    .flatMap { $0.withSymbolConfiguration(iconCfg) }
+                menu.addItem(item)
+            }
 
             menu.addItem(NSMenuItem.separator())
         }
 
-        let enableItem = NSMenuItem(
-            title: isEnabled ? "✓ 开启 App 自动切换" : "  开启 App 自动切换",
-            action: #selector(toggleAutoSwitch(_:)),
-            keyEquivalent: ""
-        )
+        // ── 功能开关 ──
+        let enableItem = NSMenuItem(title: "自动切换输入法",
+                                    action: #selector(toggleAutoSwitch(_:)),
+                                    keyEquivalent: "")
+        enableItem.state = isEnabled ? .on : .off
         menu.addItem(enableItem)
 
-        let loginStatus = SMAppService.mainApp.status == .enabled
-        let loginItem = NSMenuItem(
-            title: loginStatus ? "✓ 开机自启动" : "  开机自启动",
-            action: #selector(toggleLaunchAtLogin(_:)),
-            keyEquivalent: ""
-        )
+        let loginItem = NSMenuItem(title: "开机自启动",
+                                   action: #selector(toggleLaunchAtLogin(_:)),
+                                   keyEquivalent: "")
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
 
-        // ── CapsLock 兼容模式 ──
-        let capsLockOn = InputMethodManager.shared.useCapsLockSimulation
-        let capsLockItem = NSMenuItem(
-            title: (capsLockOn ? "✓ " : "  ") + "CapsLock 兼容模式",
-            action: #selector(toggleCapsLockSimulation(_:)),
-            keyEquivalent: ""
-        )
-        capsLockItem.toolTip = "开启后切换将通过模拟 CapsLock 完成，让 macOS 原生的 CapsLock 切换中英输入源功能保持正常工作（需要辅助功能权限）"
+        let capsLockItem = NSMenuItem(title: "CapsLock 兼容模式",
+                                      action: #selector(toggleCapsLockSimulation(_:)),
+                                      keyEquivalent: "")
+        capsLockItem.state = InputMethodManager.shared.useCapsLockSimulation ? .on : .off
+        capsLockItem.toolTip = "通过模拟 CapsLock 按键完成切换，需要辅助功能权限"
         menu.addItem(capsLockItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        // ── 应用策略管理窗口 ──
-        let listItem = NSMenuItem(
-            title: "管理应用策略...",
-            action: #selector(openAppList),
-            keyEquivalent: ","
-        )
+        // ── 应用规则管理窗口 ──
+        let listItem = NSMenuItem(title: "应用输入法规则\u{2026}",
+                                  action: #selector(openAppList),
+                                  keyEquivalent: ",")
         menu.addItem(listItem)
 
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "退出 Tail Input",
+                                action: #selector(quit),
+                                keyEquivalent: "q"))
     }
 
     // MARK: - Actions

@@ -8,7 +8,7 @@ class HUDWindowController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 170, height: 64),
+            contentRect: NSRect(x: 0, y: 0, width: 178, height: 66),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -31,15 +31,24 @@ class HUDWindowController: NSWindowController {
     private func setupUI() {
         guard let contentView = window?.contentView else { return }
 
-        // 使用普通 View+CALayer 替代 NSVisualEffectView，
-        // 后者在系统输入法切换时同时开启动画会导致 WindowServer 渲染卡顿
+        // Plain CALayer instead of NSVisualEffectView — avoids WindowServer stutter
+        // when the OS input-method animation and our fade-in run simultaneously.
         let container = NSView(frame: contentView.bounds)
         container.autoresizingMask = [.width, .height]
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.72).cgColor
-        container.layer?.cornerRadius = 14
+        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.76).cgColor
+        container.layer?.cornerRadius = 18          // LiquidGlass continuous radius
+        container.layer?.cornerCurve = .continuous
         container.layer?.masksToBounds = true
         contentView.addSubview(container)
+
+        // Subtle top-edge shine — 1 pt white highlight for glass feel
+        let shine = CALayer()
+        shine.backgroundColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        shine.frame = CGRect(x: 1, y: container.bounds.height - 1,
+                             width: container.bounds.width - 2, height: 1)
+        shine.autoresizingMask = [.layerWidthSizable, .layerMinYMargin]
+        container.layer?.addSublayer(shine)
 
         // ── 图标 ──
         iconView.translatesAutoresizingMaskIntoConstraints = false
@@ -102,9 +111,9 @@ class HUDWindowController: NSWindowController {
 
         // 重新计算并设置窗口位置到当前激活屏幕的右上角
         let screenRect = getActiveScreen().visibleFrame
-        let hudWidth: CGFloat = 170
-        let hudHeight: CGFloat = 64
-        let margin: CGFloat = 20
+        let hudWidth: CGFloat = 178
+        let hudHeight: CGFloat = 66
+        let margin: CGFloat = 24
         let hudRect = NSRect(
             x: screenRect.maxX - hudWidth - margin,
             y: screenRect.maxY - hudHeight - margin,
