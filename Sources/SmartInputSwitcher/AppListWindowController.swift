@@ -130,6 +130,7 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
     private var tableView: NSTableView!
     private var emptyStateView: NSView!
     private var globalStrategyControl: NSSegmentedControl!
+    private var activePicker: AppPickerSheetController?   // retain until sheet dismissed
     private var apps: [ConfiguredApp] = []
     private var iconCache: [String: NSImage] = [:]
 
@@ -486,19 +487,22 @@ class AppListWindowController: NSWindowController, NSWindowDelegate {
     @objc private func addCurrentApp() {
         guard let window = window else { return }
 
-        // Open app picker sheet; pre-select the current front app
         let picker = AppPickerSheetController(
             preselectedBundleId: InputMethodManager.shared.currentAppBundleIdentifier
         )
+        activePicker = picker   // must retain — sheet doesn't hold a strong ref to the controller
+
         picker.completion = { [weak self] bundleId, appName, strategy in
             ConfiguredAppStore.shared.setStrategy(strategy, for: bundleId, appName: appName)
             self?.reload()
-            // Scroll to the newly added row
             if let idx = self?.apps.firstIndex(where: { $0.bundleId == bundleId }) {
                 self?.tableView.scrollRowToVisible(idx)
             }
         }
-        window.beginSheet(picker.window!) { _ in }
+
+        window.beginSheet(picker.window!) { [weak self] _ in
+            self?.activePicker = nil    // release after sheet ends (OK or cancel)
+        }
     }
 
     @objc private func strategyChanged(_ sender: NSPopUpButton) {
