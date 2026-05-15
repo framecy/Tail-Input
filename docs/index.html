@@ -131,36 +131,79 @@
         </main>
 
         <!-- 功能区 -->
-        <section id="features" class="features-grid">
-            <div class="feature-card glass-card">
-                <div class="feature-icon">🎯</div>
-                <h3>按应用定制策略</h3>
-                <p>Xcode 强制英文、微信强制中文、终端保持原状 — 每个 App 独立配置，一次设定永久生效。</p>
+        <section id="features" class="features-section">
+            <div class="features-header">
+                <span class="features-eyebrow">核心功能</span>
+                <h2 class="features-heading">一次配置，处处省心</h2>
             </div>
-            <div class="feature-card glass-card">
-                <div class="feature-icon">⚡</div>
-                <h3>乐观缓存切换</h3>
-                <p>TIS 切换成功后立即更新本地缓存，消除异步读取竞态，确保每次切换 App 输入法都正确响应。</p>
-            </div>
-            <div class="feature-card glass-card">
-                <div class="feature-icon">🛡️</div>
-                <h3>隐私优先</h3>
-                <p>无需辅助功能权限，基于 NSWorkspace 通知感知焦点切换，不读取任何键盘输入内容。</p>
-            </div>
-            <div class="feature-card glass-card">
-                <div class="feature-icon">🔍</div>
-                <h3>应用选择器</h3>
-                <p>从全部已安装应用中搜索并选择，支持按名称和 Bundle ID 过滤，不局限于当前前台应用。</p>
-            </div>
-            <div class="feature-card glass-card">
-                <div class="feature-icon">🔔</div>
-                <h3>HUD 实时提示</h3>
-                <p>切换时屏幕右上角短暂显示当前输入法（简体中文 / English），操作反馈清晰直观。</p>
-            </div>
-            <div class="feature-card glass-card">
-                <div class="feature-icon">⌨️</div>
-                <h3>CapsLock 兼容</h3>
-                <p>通过模拟系统级 CapsLock 事件完成切换，保留 macOS 原生 CapsLock 切换中英文的能力。</p>
+
+            <div class="features-bento">
+                <!-- 策略定制 — 2 cols, featured -->
+                <div class="fc fc-span2 fc-blue">
+                    <div class="fc-head">
+                        <span class="fc-pill fc-pill-blue">🎯</span>
+                        <span class="fc-label">核心</span>
+                    </div>
+                    <h3 class="fc-title">按应用定制策略</h3>
+                    <p class="fc-desc">Xcode 强制英文、微信强制中文、终端保持原状 — 每个 App 独立配置，一次设定永久生效。</p>
+                    <div class="fc-illustration">
+                        <div class="ill-row">
+                            <span class="ill-dot ill-dot-blue"></span>
+                            <span class="ill-name">Xcode</span>
+                            <span class="ill-badge ill-badge-en">英文</span>
+                        </div>
+                        <div class="ill-row">
+                            <span class="ill-dot ill-dot-green"></span>
+                            <span class="ill-name">微信</span>
+                            <span class="ill-badge ill-badge-zh">中文</span>
+                        </div>
+                        <div class="ill-row">
+                            <span class="ill-dot ill-dot-slate"></span>
+                            <span class="ill-name">Terminal</span>
+                            <span class="ill-badge ill-badge-keep">保持</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 隐私优先 — 1 col -->
+                <div class="fc fc-green">
+                    <span class="fc-pill fc-pill-green">🛡️</span>
+                    <h3 class="fc-title">隐私优先</h3>
+                    <p class="fc-desc">无需辅助功能权限，基于 NSWorkspace 通知感知焦点切换，不读取任何键盘输入内容。</p>
+                </div>
+
+                <!-- 乐观缓存 — 1 col -->
+                <div class="fc fc-amber">
+                    <span class="fc-pill fc-pill-amber">⚡</span>
+                    <h3 class="fc-title">乐观缓存切换</h3>
+                    <p class="fc-desc">TIS 切换成功后立即更新本地缓存，消除异步读取竞态，确保每次切换 App 输入法都正确响应。</p>
+                </div>
+
+                <!-- 应用选择器 — 1 col -->
+                <div class="fc fc-violet">
+                    <span class="fc-pill fc-pill-violet">🔍</span>
+                    <h3 class="fc-title">应用选择器</h3>
+                    <p class="fc-desc">从全部已安装应用中搜索并选择，支持按名称和 Bundle ID 过滤，不局限于当前前台应用。</p>
+                </div>
+
+                <!-- HUD — 1 col -->
+                <div class="fc fc-rose">
+                    <span class="fc-pill fc-pill-rose">🔔</span>
+                    <h3 class="fc-title">HUD 实时提示</h3>
+                    <p class="fc-desc">切换时屏幕右上角短暂显示当前输入法（简体中文 / English），操作反馈清晰直观。</p>
+                </div>
+
+                <!-- CapsLock — 3 cols, slim horizontal -->
+                <div class="fc fc-span3 fc-slate fc-horizontal">
+                    <div class="fc-horizontal-main">
+                        <span class="fc-pill fc-pill-slate">⌨️</span>
+                        <div>
+                            <h3 class="fc-title">CapsLock 兼容模式</h3>
+                            <p class="fc-desc">通过模拟系统级 CapsLock 事件完成切换，保留 macOS 原生 CapsLock 切换中英文的能力。</p>
+                        </div>
+                    </div>
+                    <span class="fc-note-pill">需要辅助功能权限（仅此功能）</span>
+                </div>
             </div>
         </section>
 
