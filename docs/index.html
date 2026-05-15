@@ -32,17 +32,17 @@
         <main class="hero">
             <div class="hero-content">
                 <div class="badge">v1.3.1 &middot; 开源 &middot; macOS 13+</div>
-                <h1 class="hero-title">告别输入法<br><span class="text-gradient">手动切换</span></h1>
+                <h1 class="hero-title">切换 App<br><span class="text-gradient">输入法跟着走</span></h1>
                 <p class="hero-subtitle">
-                    切换 App 时自动切换输入法 — 英文 IDE、中文微信，一切自如。
-                    基于底层 TIS 乐观缓存，无需辅助功能权限，隐私优先。
+                    打开 Xcode 自动切英文，回微信自动切中文。<br>
+                    无需辅助功能权限，轻量常驻，隐私优先。
                 </p>
                 <div class="hero-actions">
                     <a href="https://github.com/framecy/Tail-Input/releases/latest" class="btn btn-primary">
                         ↓ 下载 v1.3.1
                     </a>
                     <a href="https://github.com/framecy/Tail-Input" class="btn btn-secondary">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.379.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/>
                         </svg>
                         查看源码
@@ -50,26 +50,81 @@
                 </div>
             </div>
 
+            <!-- App 窗口 mockup -->
             <div class="hero-visual">
-                <!-- 菜单栏 mockup -->
-                <div class="glass-card mockup-menubar">
-                    <div class="menubar-row">
-                        <span class="menubar-time">9:41</span>
-                        <div class="menubar-icons">
-                            <span class="menubar-icon active">⌨</span>
-                            <span class="menubar-icon dim">wifi</span>
-                            <span class="menubar-icon dim">🔋</span>
+                <div class="mockup-window">
+                    <!-- 标题栏 -->
+                    <div class="win-titlebar">
+                        <div class="win-traffic">
+                            <span class="dot dot-red"></span>
+                            <span class="dot dot-yellow"></span>
+                            <span class="dot dot-green"></span>
                         </div>
+                        <span class="win-title">应用输入法规则</span>
                     </div>
-                    <div class="menubar-menu">
-                        <div class="menu-item menu-header">Xcode</div>
-                        <div class="menu-item selected">✓ 跟随全局设置</div>
-                        <div class="menu-item">  切换为英文</div>
-                        <div class="menu-item">  切换为中文</div>
-                        <div class="menu-item">  保持不变</div>
-                        <div class="menu-divider"></div>
-                        <div class="menu-item">✓ 自动切换输入法</div>
-                        <div class="menu-item dim">应用输入法规则…</div>
+                    <!-- 内容区 -->
+                    <div class="win-body">
+                        <!-- 左侧边栏 -->
+                        <div class="win-sidebar">
+                            <div class="sidebar-row">
+                                <span class="sidebar-label">自动切换输入法</span>
+                                <span class="toggle-on"></span>
+                            </div>
+                            <div class="sidebar-row">
+                                <span class="sidebar-label">开机自启动</span>
+                                <span class="toggle-on"></span>
+                            </div>
+                            <div class="sidebar-row">
+                                <span class="sidebar-label">CapsLock 兼容</span>
+                                <span class="toggle-off"></span>
+                            </div>
+                            <div class="sidebar-sep"></div>
+                            <div class="sidebar-section-label">其他应用默认</div>
+                            <div class="sidebar-seg">
+                                <span class="seg-item active">英文</span>
+                                <span class="seg-item">中文</span>
+                                <span class="seg-item">保持</span>
+                            </div>
+                            <div class="sidebar-footer">
+                                <div class="sf-icon">⌨️</div>
+                                <div class="sf-text">
+                                    <div class="sf-name">Tail Input</div>
+                                    <div class="sf-meta">v1.3.1 · MIT</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 右侧规则列表 -->
+                        <div class="win-content">
+                            <div class="content-topbar">
+                                <span class="content-title">应用输入法规则</span>
+                                <span class="content-add">＋</span>
+                            </div>
+                            <div class="content-search">🔍 搜索应用名称…</div>
+                            <div class="app-row">
+                                <div class="app-icon app-icon-xcode"></div>
+                                <div class="app-info">
+                                    <div class="app-name">Xcode</div>
+                                    <div class="app-bundle">com.apple.dt.Xcode</div>
+                                </div>
+                                <div class="app-strategy strategy-en">英文</div>
+                            </div>
+                            <div class="app-row">
+                                <div class="app-icon app-icon-wechat"></div>
+                                <div class="app-info">
+                                    <div class="app-name">微信</div>
+                                    <div class="app-bundle">com.tencent.xinWeChat</div>
+                                </div>
+                                <div class="app-strategy strategy-zh">中文</div>
+                            </div>
+                            <div class="app-row">
+                                <div class="app-icon app-icon-terminal"></div>
+                                <div class="app-info">
+                                    <div class="app-name">Terminal</div>
+                                    <div class="app-bundle">com.apple.Terminal</div>
+                                </div>
+                                <div class="app-strategy strategy-keep">保持</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
