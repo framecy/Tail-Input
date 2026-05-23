@@ -68,29 +68,70 @@ final class InputMethodManagerIntegrationTests: XCTestCase {
         manager.setStrategy(.globalDefault, for: bundleId)
     }
 
-    // MARK: - CapsLock 模拟开关
+    // MARK: - CapsLock 拦截开关
 
-    func test_capsLockSimulation_toggleRoundTrip() {
-        let original = manager.useCapsLockSimulation
-        manager.useCapsLockSimulation = !original
-        XCTAssertEqual(manager.useCapsLockSimulation, !original)
+    func test_capsLockIntercept_toggleRoundTrip() {
+        let original = manager.useCapsLockIntercept
+        manager.useCapsLockIntercept = !original
+        XCTAssertEqual(manager.useCapsLockIntercept, !original)
         // 恢复
-        manager.useCapsLockSimulation = original
-        XCTAssertEqual(manager.useCapsLockSimulation, original)
+        manager.useCapsLockIntercept = original
+        XCTAssertEqual(manager.useCapsLockIntercept, original)
     }
 
-    func test_capsLockSimulation_persistsInUserDefaults() {
+    func test_capsLockIntercept_persistsInUserDefaults() {
         let key = "UseCapsLockSimulation"
         let original = UserDefaults.standard.bool(forKey: key)
 
-        manager.useCapsLockSimulation = true
+        manager.useCapsLockIntercept = true
         XCTAssertTrue(UserDefaults.standard.bool(forKey: key))
 
-        manager.useCapsLockSimulation = false
+        manager.useCapsLockIntercept = false
         XCTAssertFalse(UserDefaults.standard.bool(forKey: key))
 
         // 恢复
         UserDefaults.standard.set(original, forKey: key)
+        // 测试环境可能因 AX 权限启动了拦截器，显式停止
+        CapsLockInterceptor.shared.stop()
+    }
+
+    // MARK: - 防回归：tryEnable 与 isRunning 一致性
+    // 核心约束：tryEnableCapsLockIntercept 返回值 == CapsLockInterceptor.isRunning
+    // 失败时绝不能持久化 UserDefaults，避免"开关 on 但拦截器没跑"的不一致 UI 状态
+
+    func test_tryEnable_returnsFalse_doesNotPersist() {
+        let key = "UseCapsLockSimulation"
+        let originalDefault = UserDefaults.standard.bool(forKey: key)
+        UserDefaults.standard.set(false, forKey: key)
+        CapsLockInterceptor.shared.stop()  // 已知初始状态
+
+        let result = manager.tryEnableCapsLockIntercept()
+
+        // 不变式：return value 与实际 isRunning 严格一致
+        XCTAssertEqual(result, CapsLockInterceptor.shared.isRunning,
+                       "tryEnable return value must match actual interceptor state")
+
+        // 不变式：失败时 UserDefaults 不能被写成 true
+        if !result {
+            XCTAssertFalse(UserDefaults.standard.bool(forKey: key),
+                           "Must not persist intent=true when tap creation failed")
+        }
+
+        // 清理
+        CapsLockInterceptor.shared.stop()
+        UserDefaults.standard.set(originalDefault, forKey: key)
+    }
+
+    func test_tryEnable_isIdempotent() {
+        // 连续调用不应造成状态损坏
+        CapsLockInterceptor.shared.stop()
+        let r1 = manager.tryEnableCapsLockIntercept()
+        let r2 = manager.tryEnableCapsLockIntercept()
+        XCTAssertEqual(r1, r2, "Repeated tryEnable calls must return same result")
+
+        // 清理
+        CapsLockInterceptor.shared.stop()
+        UserDefaults.standard.set(false, forKey: "UseCapsLockSimulation")
     }
 
     // MARK: - 回调注册与幂等性

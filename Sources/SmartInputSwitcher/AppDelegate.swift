@@ -52,6 +52,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppObserver.shared.start()
 
+        // 启动时如果用户之前已开启 CapsLock 拦截，直接尝试 start —— tap 创建成功即代表权限有效
+        if InputMethodManager.shared.useCapsLockIntercept {
+            CapsLockInterceptor.shared.start()
+        }
+
+        // 重启后自动开启：用户点击"立即重启"后由新进程在此处接管
+        if UserDefaults.standard.bool(forKey: "PendingCapsLockEnableOnLaunch") {
+            UserDefaults.standard.removeObject(forKey: "PendingCapsLockEnableOnLaunch")
+            if InputMethodManager.shared.tryEnableCapsLockIntercept() {
+                // 重启后权限生效，刷新 UI（主窗口可能尚未创建，延迟执行）
+                DispatchQueue.main.async {
+                    MainWindowController.shared.refreshSidebar()
+                }
+            } else {
+                // 重启后仍然失败：提示用户重新授权
+                DispatchQueue.main.async {
+                    let alert = NSAlert()
+                    alert.messageText = "辅助功能权限未能激活"
+                    alert.informativeText = "请在「系统设置 → 隐私与安全 → 辅助功能」中确认 Tail Input 已开启，然后再次尝试开启 CapsLock 直接切换。"
+                    alert.addButton(withTitle: "好")
+                    alert.runModal()
+                }
+            }
+        }
+
+        // App 从后台回到前台时重试 start（用户从系统设置授权后切回时关键路径）
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+
         // 左键点击唤起主窗口；右键仍弹出菜单
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.target = self
@@ -153,11 +186,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
 
-        let capsLockItem = NSMenuItem(title: "CapsLock 兼容模式",
-                                      action: #selector(toggleCapsLockSimulation(_:)),
+        let capsLockItem = NSMenuItem(title: "CapsLock 直接切换",
+                                      action: #selector(toggleCapsLockIntercept(_:)),
                                       keyEquivalent: "")
-        capsLockItem.state = InputMethodManager.shared.useCapsLockSimulation ? .on : .off
-        capsLockItem.toolTip = "通过模拟 CapsLock 按键完成切换，需要辅助功能权限"
+        capsLockItem.state = InputMethodManager.shared.useCapsLockIntercept ? .on : .off
+        capsLockItem.toolTip = "拦截 CapsLock 按键并直接切换输入法，消除系统延迟，需要辅助功能权限"
         menu.addItem(capsLockItem)
 
         menu.addItem(NSMenuItem.separator())
@@ -188,21 +221,77 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppObserver.shared.isEnabled = isEnabled
     }
 
-    @objc func toggleCapsLockSimulation(_ sender: NSMenuItem) {
+    @objc func toggleCapsLockIntercept(_ sender: NSMenuItem) {
         let manager = InputMethodManager.shared
-        if !manager.useCapsLockSimulation {
-            // 开启前先要求辅助功能权限（带系统弹窗）
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            if !AXIsProcessTrustedWithOptions(options) {
-                let alert = NSAlert()
-                alert.messageText = "请授权辅助功能"
-                alert.informativeText = "CapsLock 兼容模式需要 Tail Input 在「系统设置 - 隐私与安全 - 辅助功能」中被授权。\n\n开启后，自动切换将通过模拟 CapsLock 完成，让你之后仍然可以用 CapsLock 切回中文。\n\n请前往系统设置开启 Tail Input 的辅助功能权限，然后再次点击此菜单项。"
-                alert.addButton(withTitle: "好")
-                alert.runModal()
-                return
-            }
+        if manager.useCapsLockIntercept {
+            manager.useCapsLockIntercept = false
+            return
         }
-        manager.useCapsLockSimulation.toggle()
+        // 想开启 — 用 tryEnable 实际尝试 tap 创建，成功才持久化
+        if !manager.tryEnableCapsLockIntercept() {
+            requestAccessibilityForCapsLock()
+        }
+    }
+
+    /// 引导用户去系统设置授权辅助功能。
+    /// 不再调用 promptForPermission()（避免系统弹窗与本弹窗叠加干扰 TCC 状态）。
+    /// CGEvent.tapCreate 失败本身已会让 App 出现在辅助功能列表里，无需额外触发。
+    func requestAccessibilityForCapsLock() {
+        let alert = NSAlert()
+        alert.messageText = "请授权辅助功能"
+        alert.informativeText = "CapsLock 直接切换需要 Tail Input 在「系统设置 → 隐私与安全 → 辅助功能」中被授权。\n\n点击「打开系统设置」，在列表中找到 Tail Input 并开启开关，然后切回本 App 即可自动激活。"
+        alert.addButton(withTitle: "打开系统设置")
+        alert.addButton(withTitle: "取消")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // 直接打开系统设置，不触发额外系统弹窗
+        AccessibilityManager.shared.openAccessibilitySettings()
+        // 标记"用户期望开启"，didBecomeActive 时自动重试
+        pendingCapsLockEnable = true
+    }
+
+    /// 用户期望开启拦截器但当前没权限，等待用户回到 App 时重试
+    private var pendingCapsLockEnable = false
+
+    @objc func handleAppDidBecomeActive() {
+        guard pendingCapsLockEnable else { return }
+        if InputMethodManager.shared.tryEnableCapsLockIntercept() {
+            // 权限已获取，进程内 tap 创建成功
+            pendingCapsLockEnable = false
+            MainWindowController.shared.refreshSidebar()
+        } else {
+            // 权限已授予但当前进程仍无法创建 tap（macOS 部分版本需重启进程）
+            // 标记重启意图，只弹一次
+            pendingCapsLockEnable = false
+            showRestartForCapsLockAlert()
+        }
+    }
+
+    /// 提示用户需要重启 App 才能激活 CapsLock tap（权限已授但当前进程无法感知）
+    private func showRestartForCapsLockAlert() {
+        let alert = NSAlert()
+        alert.messageText = "需要重启 App"
+        alert.informativeText = "辅助功能权限已授予，但当前进程需要重启才能激活 CapsLock 功能。点击「立即重启」，App 重启后会自动启用。"
+        alert.addButton(withTitle: "立即重启")
+        alert.addButton(withTitle: "稍后")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // 持久化"重启后自动开启"意图，新进程启动时读取
+        UserDefaults.standard.set(true, forKey: "PendingCapsLockEnableOnLaunch")
+
+        // 强制启动新实例（不激活已有进程），再退出当前进程
+        // createsNewApplicationInstance = true 确保 LaunchServices 真正新建进程，
+        // 而非 open() 在旧进程仍运行时只做激活（导致新进程未建立就退出了）
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.open(Bundle.main.bundleURL, configuration: config, completionHandler: nil)
+
+        // 给新进程足够时间完成启动后再退出
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            NSApp.terminate(nil)
+        }
     }
 
     @objc func toggleLaunchAtLogin(_ sender: NSMenuItem) {

@@ -18,9 +18,6 @@ class InputMethodManager: NSObject {
     private var cachedEnglishInputSourceID: String?
     var cachedIsChinese: Bool = false   // internal：AppDelegate / HUD 直接读取
 
-    // ── CapsLock 切换校验：避免系统状态机与乐观缓存不同步 ──
-    private var pendingCapsLockTarget: Bool?
-    private var capsLockVerificationWorkItem: DispatchWorkItem?
     private var lastDeliveredInputState: Bool?
 
     // ── 当前应用信息 ──
@@ -31,11 +28,33 @@ class InputMethodManager: NSObject {
     var onInputMethodChanged: ((Bool) -> Void)?
     var onAppChanged: (() -> Void)?
 
-    // ── CapsLock 兼容模式 ──
-    private static let kUseCapsLockSimulationKey = "UseCapsLockSimulation"
-    var useCapsLockSimulation: Bool {
-        get { UserDefaults.standard.bool(forKey: Self.kUseCapsLockSimulationKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.kUseCapsLockSimulationKey) }
+    // ── CapsLock 拦截模式 ──
+    // UserDefaults 持久化的是"用户的意图"。实际 tap 是否运行由 CapsLockInterceptor.isRunning 决定。
+    // 两者可能短暂不一致：用户开启意图后等待 AX 授权期间 → 意图 true，isRunning false。
+    // AppDelegate 监听 NSApplication.didBecomeActive，在用户从系统设置回到 App 时重试 start()。
+    private static let kUseCapsLockInterceptKey = "UseCapsLockSimulation"
+    var useCapsLockIntercept: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.kUseCapsLockInterceptKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.kUseCapsLockInterceptKey)
+            if newValue {
+                CapsLockInterceptor.shared.start()
+            } else {
+                CapsLockInterceptor.shared.stop()
+            }
+        }
+    }
+
+    /// UI 调用：尝试开启拦截器。返回 false 表示需要权限，调用方应触发授权流程。
+    /// 与直接 `useCapsLockIntercept = true` 的区别：仅在实际成功时才持久化意图，
+    /// 避免"开关 on 但拦截器没跑"的不一致状态。
+    @discardableResult
+    func tryEnableCapsLockIntercept() -> Bool {
+        if CapsLockInterceptor.shared.start() {
+            UserDefaults.standard.set(true, forKey: Self.kUseCapsLockInterceptKey)
+            return true
+        }
+        return false
     }
 
     override init() {
@@ -156,13 +175,12 @@ class InputMethodManager: NSObject {
     private func switchTo(chinese: Bool) {
         refreshCachedInputSource()
         guard cachedIsChinese != chinese else { return }
-
-        if useCapsLockSimulation && AXIsProcessTrusted() {
-            // 乐观更新：CapsLock 事件异步生效，提前写入目标状态让 UI 立即响应
-            switchViaCapsLock(chinese: chinese)
-            return
-        }
         switchViaTIS(chinese: chinese)
+    }
+
+    func toggleInputMethod() {
+        refreshCachedInputSource()
+        switchViaTIS(chinese: !cachedIsChinese)
     }
 
     // MARK: - TIS 切换（每次获取新鲜列表，避免缓存 TISInputSource 指针悬空）
@@ -281,52 +299,6 @@ class InputMethodManager: NSObject {
         }
     }
 
-    // MARK: - CapsLock 模拟
-
-    private func switchViaCapsLock(chinese: Bool) {
-        pendingCapsLockTarget = chinese
-        cachedIsChinese = chinese
-        deliverInputMethodChanged(chinese)
-        simulateCapsLock()
-        scheduleCapsLockVerification(target: chinese, retriesRemaining: 1)
-    }
-
-    private func simulateCapsLock() {
-        let src = CGEventSource(stateID: .hidSystemState)
-        let kVK_CapsLock: CGKeyCode = 0x39
-        CGEvent(keyboardEventSource: src, virtualKey: kVK_CapsLock, keyDown: true)?.post(tap: .cghidEventTap)
-        CGEvent(keyboardEventSource: src, virtualKey: kVK_CapsLock, keyDown: false)?.post(tap: .cghidEventTap)
-    }
-
-    private func scheduleCapsLockVerification(target: Bool, retriesRemaining: Int) {
-        capsLockVerificationWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-
-            self.refreshCachedInputSource()
-            if self.cachedIsChinese == target {
-                self.pendingCapsLockTarget = nil
-                self.deliverInputMethodChanged(target)
-                return
-            }
-
-            if retriesRemaining > 0 {
-                NSLog("[TailInput] CapsLock switch verification failed, retrying")
-                self.cachedIsChinese = target
-                self.deliverInputMethodChanged(target)
-                self.simulateCapsLock()
-                self.scheduleCapsLockVerification(target: target, retriesRemaining: retriesRemaining - 1)
-            } else {
-                NSLog("[TailInput] CapsLock switch verification failed, falling back to TIS")
-                self.pendingCapsLockTarget = nil
-                self.switchViaTIS(chinese: target)
-            }
-        }
-        capsLockVerificationWorkItem = work
-        // macOS 26 CapsLock 生效更快，从 120ms 降至 80ms
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
-    }
-
     // MARK: - 全局默认策略（UserDefaults 持久化，默认切英文）
 
     var globalDefaultStrategy: AppInputStrategy {
@@ -405,12 +377,6 @@ class InputMethodManager: NSObject {
         // DistributedNotificationCenter 在注册线程（主线程）回调，直接操作缓存
         refreshCachedInputSource()
         let isChinese = cachedIsChinese
-
-        if pendingCapsLockTarget == isChinese {
-            pendingCapsLockTarget = nil
-            capsLockVerificationWorkItem?.cancel()
-            capsLockVerificationWorkItem = nil
-        }
 
         deliverInputMethodChanged(isChinese)
     }

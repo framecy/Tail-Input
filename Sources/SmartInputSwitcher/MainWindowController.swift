@@ -40,6 +40,9 @@ final class MainWindowController: NSWindowController {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// 供外部（如授权完成回调）刷新侧栏开关状态
+    func refreshSidebar() { sidebar.refresh() }
+
     // MARK: - Layout
 
     private func buildUI() {
@@ -147,7 +150,7 @@ final class MainWindowController: NSWindowController {
 private final class SidebarView: NSView {
     private let autoSwitch   = LabeledToggle(label: "自动切换输入法")
     private let loginItem    = LabeledToggle(label: "开机自启动")
-    private let capsLock     = LabeledToggle(label: "CapsLock 兼容模式")
+    private let capsLock     = LabeledToggle(label: "CapsLock 直接切换")
     private let globalSeg    = NSSegmentedControl(labels: ["英文", "中文", "保持"], trackingMode: .selectOne, target: nil, action: nil)
 
     override init(frame: NSRect) {
@@ -160,7 +163,7 @@ private final class SidebarView: NSView {
         let mgr = InputMethodManager.shared
         autoSwitch.isOn = (NSApp.delegate as? AppDelegate)?.isEnabled ?? true
         loginItem.isOn  = SMAppService.mainApp.status == .enabled
-        capsLock.isOn   = mgr.useCapsLockSimulation
+        capsLock.isOn   = mgr.useCapsLockIntercept
 
         switch mgr.globalDefaultStrategy {
         case .forceChinese: globalSeg.selectedSegment = 1
@@ -233,19 +236,15 @@ private final class SidebarView: NSView {
 
     private func handleCapsLockToggle(_ isOn: Bool) {
         let mgr = InputMethodManager.shared
-        if isOn && !mgr.useCapsLockSimulation {
-            let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            if !AXIsProcessTrustedWithOptions(opts) {
-                let alert = NSAlert()
-                alert.messageText = "请授权辅助功能"
-                alert.informativeText = "CapsLock 兼容模式需要在「系统设置 → 隐私与安全 → 辅助功能」中授权 Tail Input，然后再次开启。"
-                alert.addButton(withTitle: "好")
-                alert.runModal()
-                capsLock.isOn = false
-                return
-            }
+        if !isOn {
+            mgr.useCapsLockIntercept = false
+            return
         }
-        mgr.useCapsLockSimulation = isOn
+        // 想开启 — 实际尝试 tap 创建，失败说明缺权限
+        if !mgr.tryEnableCapsLockIntercept() {
+            capsLock.isOn = false   // 视觉先回弹，didBecomeActive 时若成功会刷新
+            (NSApp.delegate as? AppDelegate)?.requestAccessibilityForCapsLock()
+        }
     }
 
     private func sectionLabel(_ text: String) -> NSTextField {
