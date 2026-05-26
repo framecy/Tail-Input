@@ -112,8 +112,20 @@ class CapsLockInterceptor {
             return Unmanaged.passUnretained(event)
 
         case .pure:
-            // 时间窗去重：100ms 内的事件视为同一次物理按下产生的派生事件
-            // （包括 DOWN/UP 两个原始事件 + IOHIDSetModifierLockState 反向触发的回响）
+            // 只在 kernel 把 CapsLock 状态转为"已锁定"的事件上触发。
+            //
+            // 一次物理按下会产生：
+            //   1) DOWN 事件：flag SET（kernel 刚把状态转 ON）
+            //   2) UP 事件：flag 仍然 SET（kernel 没再翻转，物理松开不改变锁定状态）
+            //   3) forceCapsLockOff 反向修改：flag CLEAR（kernel 被我们强制转 OFF）
+            //
+            // 用 flag 方向去重：只取"刚转 ON"那一类事件 + 时间窗防御同向重复。
+            guard event.flags.contains(.maskAlphaShift) else {
+                // CLEAR 方向的事件一律吞掉，包括 IOKit 反弹
+                return nil
+            }
+
+            // 同向（SET）事件也可能在同一次按下里出现两次（DOWN+UP），50ms 窗内只取第一次
             let now = mach_absolute_time()
             let elapsedNanos = (now - lastPureTriggerNanos) * UInt64(Self.timebaseInfo.numer) / UInt64(Self.timebaseInfo.denom)
             if lastPureTriggerNanos != 0 && elapsedNanos < pureDebounceNanos {
