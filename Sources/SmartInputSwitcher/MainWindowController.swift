@@ -14,7 +14,7 @@ final class MainWindowController: NSWindowController {
 
     private init() {
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -152,6 +152,9 @@ private final class SidebarView: NSView {
     private let loginItem    = LabeledToggle(label: "开机自启动")
     private let capsLockSeg  = NSSegmentedControl(labels: ["关闭", "兼容", "纯切换"], trackingMode: .selectOne, target: nil, action: nil)
     private let globalSeg    = NSSegmentedControl(labels: ["英文", "中文", "保持"], trackingMode: .selectOne, target: nil, action: nil)
+    private let hudPicker    = HUDPositionPicker()
+    private let hudScreenRow = NSView()
+    private let hudScreenPopup = NSPopUpButton()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -174,6 +177,12 @@ private final class SidebarView: NSView {
         case .forceChinese: globalSeg.selectedSegment = 1
         case .keepCurrent:  globalSeg.selectedSegment = 2
         default:            globalSeg.selectedSegment = 0
+        }
+
+        // HUD 位置
+        if let hud = (NSApp.delegate as? AppDelegate)?.hudController {
+            hudPicker.setSelected(hud.hudPosition)
+            refreshScreenPopup(hud: hud)
         }
     }
 
@@ -212,6 +221,14 @@ private final class SidebarView: NSView {
         globalSeg.widthAnchor.constraint(equalToConstant: 188).isActive = true
         stack.addArrangedSubview(globalSeg)
 
+        // HUD 位置 section
+        stack.addArrangedSubview(Spacer(20))
+        stack.addArrangedSubview(sectionLabel("HUD 位置"))
+        stack.addArrangedSubview(Spacer(6))
+        stack.addArrangedSubview(hudPicker)
+        stack.addArrangedSubview(Spacer(4))
+        buildHUDScreenRow(into: stack)
+
         // Spacer pushes footer down
         let flex = NSView()
         flex.setContentHuggingPriority(.fittingSizeCompression, for: .vertical)
@@ -234,6 +251,13 @@ private final class SidebarView: NSView {
         capsLockSeg.action = #selector(capsLockSegChanged)
         globalSeg.target = self
         globalSeg.action = #selector(globalSegChanged)
+
+        hudPicker.onChange = { [weak self] position in
+            (NSApp.delegate as? AppDelegate)?.hudController?.hudPosition = position
+            if let hud = (NSApp.delegate as? AppDelegate)?.hudController {
+                self?.refreshScreenPopup(hud: hud)
+            }
+        }
     }
 
     @objc private func globalSegChanged() {
@@ -337,6 +361,54 @@ private final class SidebarView: NSView {
             v.heightAnchor.constraint(equalToConstant: 44),
         ])
         return v
+    }
+
+    // MARK: - HUD 屏幕选择行
+
+    private func buildHUDScreenRow(into stack: NSStackView) {
+        hudScreenRow.translatesAutoresizingMaskIntoConstraints = false
+        hudScreenRow.widthAnchor.constraint(equalToConstant: 188).isActive = true
+        hudScreenRow.heightAnchor.constraint(equalToConstant: 24).isActive = true
+
+        let lbl = NSTextField(labelWithString: "显示在")
+        lbl.font = .systemFont(ofSize: 11)
+        lbl.textColor = .secondaryLabelColor
+        lbl.translatesAutoresizingMaskIntoConstraints = false
+
+        hudScreenPopup.controlSize = .small
+        hudScreenPopup.font = .systemFont(ofSize: 11)
+        hudScreenPopup.target = self
+        hudScreenPopup.action = #selector(screenPopupChanged)
+        hudScreenPopup.translatesAutoresizingMaskIntoConstraints = false
+
+        hudScreenRow.addSubview(lbl)
+        hudScreenRow.addSubview(hudScreenPopup)
+        NSLayoutConstraint.activate([
+            lbl.leadingAnchor.constraint(equalTo: hudScreenRow.leadingAnchor),
+            lbl.centerYAnchor.constraint(equalTo: hudScreenRow.centerYAnchor),
+            hudScreenPopup.leadingAnchor.constraint(equalTo: lbl.trailingAnchor, constant: 6),
+            hudScreenPopup.trailingAnchor.constraint(equalTo: hudScreenRow.trailingAnchor),
+            hudScreenPopup.centerYAnchor.constraint(equalTo: hudScreenRow.centerYAnchor),
+        ])
+        stack.addArrangedSubview(hudScreenRow)
+        hudScreenRow.isHidden = NSScreen.screens.count <= 1
+    }
+
+    fileprivate func refreshScreenPopup(hud: HUDWindowController) {
+        hudScreenPopup.removeAllItems()
+        hudScreenPopup.addItem(withTitle: "跟随焦点屏幕")
+        for (i, screen) in NSScreen.screens.enumerated() {
+            let name = screen.localizedName.isEmpty ? "屏幕 \(i + 1)" : screen.localizedName
+            hudScreenPopup.addItem(withTitle: name)
+        }
+        let sel = max(0, hud.hudScreenIndex + 1)   // -1→0, 0→1 …
+        hudScreenPopup.selectItem(at: min(sel, hudScreenPopup.numberOfItems - 1))
+        hudScreenRow.isHidden = NSScreen.screens.count <= 1
+    }
+
+    @objc private func screenPopupChanged() {
+        guard let hud = (NSApp.delegate as? AppDelegate)?.hudController else { return }
+        hud.hudScreenIndex = hudScreenPopup.indexOfSelectedItem - 1  // 0→-1, 1→0 …
     }
 
     @objc private func openGitHub() {
@@ -1038,6 +1110,102 @@ private final class AppBrowserRowView: NSTableRowView {
             row.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    }
+}
+
+// MARK: - HUDPositionPicker
+
+private final class HUDPositionPicker: NSView {
+    var onChange: ((HUDPosition) -> Void)?
+    private var buttons: [NSButton] = []
+
+    // 行从上到下排列
+    private static let layout: [(HUDPosition, String)] = [
+        (.topLeft,     "arrow.up.left"),
+        (.topCenter,   "arrow.up"),
+        (.topRight,    "arrow.up.right"),
+        (.middleLeft,  "arrow.left"),
+        (.middleCenter,"dot.square"),
+        (.middleRight, "arrow.right"),
+        (.bottomLeft,  "arrow.down.left"),
+        (.bottomCenter,"arrow.down"),
+        (.bottomRight, "arrow.down.right"),
+    ]
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        build()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func setSelected(_ position: HUDPosition) {
+        for btn in buttons {
+            btn.state = HUDPosition(rawValue: btn.tag) == position ? .on : .off
+        }
+    }
+
+    private func build() {
+        let btnW: CGFloat = 36
+        let btnH: CGFloat = 30
+        let gap:  CGFloat = 3
+        let gridW = btnW * 3 + gap * 2   // 114pt
+
+        let vStack = NSStackView()
+        vStack.orientation = .vertical
+        vStack.spacing = gap
+        vStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(vStack)
+        NSLayoutConstraint.activate([
+            vStack.topAnchor.constraint(equalTo: topAnchor),
+            vStack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            vStack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+
+        for row in 0..<3 {
+            let hStack = NSStackView()
+            hStack.orientation = .horizontal
+            hStack.spacing = gap
+            for col in 0..<3 {
+                let (pos, symbol) = Self.layout[row * 3 + col]
+                let btn = NSButton()
+                btn.tag = pos.rawValue
+                btn.bezelStyle = .regularSquare
+                btn.setButtonType(.pushOnPushOff)
+                btn.translatesAutoresizingMaskIntoConstraints = false
+                btn.widthAnchor.constraint(equalToConstant: btnW).isActive = true
+                btn.heightAnchor.constraint(equalToConstant: btnH).isActive = true
+                if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
+                    btn.image = img.withSymbolConfiguration(
+                        NSImage.SymbolConfiguration(pointSize: 10, weight: .regular))
+                }
+                btn.target = self
+                btn.action = #selector(tapped(_:))
+                hStack.addArrangedSubview(btn)
+                buttons.append(btn)
+            }
+            vStack.addArrangedSubview(hStack)
+        }
+
+        // "鼠标附近" — 跨行全宽按钮
+        let nearBtn = NSButton(title: "鼠标附近", target: self, action: #selector(tapped(_:)))
+        nearBtn.tag = HUDPosition.nearMouse.rawValue
+        nearBtn.bezelStyle = .regularSquare
+        nearBtn.setButtonType(.pushOnPushOff)
+        nearBtn.font = .systemFont(ofSize: 11)
+        nearBtn.translatesAutoresizingMaskIntoConstraints = false
+        nearBtn.widthAnchor.constraint(equalToConstant: gridW).isActive = true
+        nearBtn.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        vStack.addArrangedSubview(nearBtn)
+        buttons.append(nearBtn)
+
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: gridW).isActive = true
+    }
+
+    @objc private func tapped(_ sender: NSButton) {
+        guard let pos = HUDPosition(rawValue: sender.tag) else { return }
+        setSelected(pos)
+        onChange?(pos)
     }
 }
 

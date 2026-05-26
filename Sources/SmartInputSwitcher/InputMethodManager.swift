@@ -25,7 +25,8 @@ class InputMethodManager: NSObject {
     var currentAppName: String?
 
     // ── 回调 ──
-    var onInputMethodChanged: ((Bool) -> Void)?
+    var onInputMethodChanged: ((Bool) -> Void)?  // HUD 触发（带去重）
+    var onInputStateRefreshed: ((Bool) -> Void)? // 状态栏刷新（无去重，TIS 通知即触发）
     var onAppChanged: (() -> Void)?
 
     // ── CapsLock 拦截模式 ──
@@ -405,11 +406,21 @@ class InputMethodManager: NSObject {
     }
 
     @objc private func handleInputMethodChange() {
-        // DistributedNotificationCenter 在注册线程（主线程）回调，直接操作缓存
         refreshCachedInputSource()
         let isChinese = cachedIsChinese
-
+        // 无条件刷新状态栏（绕过 HUD 去重逻辑）
+        onInputStateRefreshed?(isChinese)
         deliverInputMethodChanged(isChinese)
+        // TIS 通知有时早于状态实际生效 ~60ms，延迟补读一次
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            guard let self = self else { return }
+            let prev = self.cachedIsChinese
+            self.refreshCachedInputSource()
+            if self.cachedIsChinese != prev {
+                self.onInputStateRefreshed?(self.cachedIsChinese)
+                self.deliverInputMethodChanged(self.cachedIsChinese)
+            }
+        }
     }
 
     private func deliverInputMethodChanged(_ isChinese: Bool) {

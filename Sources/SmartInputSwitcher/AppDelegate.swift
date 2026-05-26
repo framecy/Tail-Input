@@ -21,16 +21,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 装配主菜单 — Cmd+W / Cmd+A / Cmd+C / Cmd+V / Cmd+Q 等系统快捷键的来源
         setupMainMenu()
 
-        // 固定 32pt：容纳胶囊徽章（中 / En），切换时宽度不跳变
-        statusItem = NSStatusBar.system.statusItem(withLength: 32)
+        // 固定 26pt：纯文字徽章"中"/"En"，切换时宽度不跳变
+        statusItem = NSStatusBar.system.statusItem(withLength: 26)
 
         updateStatusBarButton()
 
         hudController = HUDWindowController()
 
-        // 监听输入法状态变更（更新状态栏图标与弹窗）
-        InputMethodManager.shared.onInputMethodChanged = { [weak self] isChinese in
+        // onInputStateRefreshed：TIS 通知无条件触发，仅更新状态栏图标（无 HUD 去重干扰）
+        InputMethodManager.shared.onInputStateRefreshed = { [weak self] _ in
             self?.updateStatusBarButton()
+        }
+        // onInputMethodChanged：带去重，触发 HUD 弹窗（连续相同状态不重复弹）
+        InputMethodManager.shared.onInputMethodChanged = { [weak self] isChinese in
             self?.hudController?.showHUD(isChinese: isChinese)
         }
 
@@ -181,46 +184,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         button.attributedTitle = NSAttributedString()
     }
 
-    /// 绘制胶囊徽章：中文 = 橙色底白字"中"，英文 = 蓝色底白字"En"。
-    /// isTemplate = false 保留颜色，深色/浅色菜单栏均清晰可辨。
+    /// 纯文字 template 徽章：中文 = medium "中"，英文 = light "En"。
+    /// isTemplate=true 让系统处理深/浅色菜单栏及高亮反色，低调无侵入感。
     private func makeStatusBadge(isChinese: Bool) -> NSImage {
-        let imgW: CGFloat = 30
-        let imgH: CGFloat = 18
-        let pillW: CGFloat = 28
-        let pillH: CGFloat = 16
-        let radius: CGFloat = 5
-
+        let imgW: CGFloat = 24
+        let imgH: CGFloat = 20
         let image = NSImage(size: NSSize(width: imgW, height: imgH), flipped: false) { _ in
-            let pillRect = NSRect(
-                x: (imgW - pillW) / 2,
-                y: (imgH - pillH) / 2,
-                width: pillW,
-                height: pillH
-            )
-            let path = NSBezierPath(roundedRect: pillRect, xRadius: radius, yRadius: radius)
-
-            // 橙色（中文）/ 蓝色（英文）— 系统色在深/浅色模式下对比度均合格
-            let bgColor = isChinese ? NSColor.systemOrange : NSColor.systemBlue
-            bgColor.setFill()
-            path.fill()
-
-            let label      = isChinese ? "中" : "En"
-            let fontSize   = isChinese ? CGFloat(11) : CGFloat(10)
-            let weight     = isChinese ? NSFont.Weight.bold : NSFont.Weight.semibold
-            let font       = NSFont.systemFont(ofSize: fontSize, weight: weight)
+            let label    = isChinese ? "中" : "En"
+            let fontSize = isChinese ? CGFloat(14) : CGFloat(12)
+            let weight   = isChinese ? NSFont.Weight.medium : NSFont.Weight.light
+            let font     = NSFont.systemFont(ofSize: fontSize, weight: weight)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
-                .foregroundColor: NSColor.white,
+                .foregroundColor: NSColor.labelColor,
             ]
-            let str      = NSAttributedString(string: label, attributes: attrs)
-            let textSize = str.size()
-            str.draw(at: NSPoint(
-                x: (imgW - textSize.width)  / 2,
-                y: (imgH - textSize.height) / 2
-            ))
+            let str  = NSAttributedString(string: label, attributes: attrs)
+            let sz   = str.size()
+            str.draw(at: NSPoint(x: (imgW - sz.width) / 2, y: (imgH - sz.height) / 2))
             return true
         }
-        image.isTemplate = false
+        image.isTemplate = true
         return image
     }
 
