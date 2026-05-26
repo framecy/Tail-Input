@@ -18,6 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 装配主菜单 — Cmd+W / Cmd+A / Cmd+C / Cmd+V / Cmd+Q 等系统快捷键的来源
+        setupMainMenu()
+
         // 固定 28pt：比 squareLength(22pt) 多给 6pt breathing room，
         // 让 character.textbox 与 keyboard 两个图标视觉重量对等，切换时宽度不跳变
         statusItem = NSStatusBar.system.statusItem(withLength: 28)
@@ -101,6 +104,70 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             MainWindowController.shared.showWindow()
         }
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: - 主菜单
+
+    /// 构建标准 macOS 主菜单。
+    /// 为什么需要：.regular 应用如果不设置 NSApp.mainMenu，
+    /// 系统快捷键（Cmd+W/A/C/V/X/Z/Q 等）不会派发到 first responder。
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        // App 菜单（标题不显示，但内容会成为应用名所在的首个菜单）
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "关于 Tail Input",
+                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                        keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "隐藏 Tail Input",
+                        action: #selector(NSApplication.hide(_:)),
+                        keyEquivalent: "h")
+        let hideOthers = NSMenuItem(title: "隐藏其他",
+                                    action: #selector(NSApplication.hideOtherApplications(_:)),
+                                    keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(withTitle: "显示全部",
+                        action: #selector(NSApplication.unhideAllApplications(_:)),
+                        keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "退出 Tail Input",
+                        action: #selector(NSApplication.terminate(_:)),
+                        keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // 编辑菜单 — 系统通过 first responder 派发到 NSTextField / NSTableView
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = NSMenuItem(title: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redo)
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        // 窗口菜单 — Cmd+W 关闭、Cmd+M 最小化
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "窗口")
+        windowMenu.addItem(withTitle: "最小化",
+                           action: #selector(NSWindow.performMiniaturize(_:)),
+                           keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "关闭",
+                           action: #selector(NSWindow.performClose(_:)),
+                           keyEquivalent: "w")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = mainMenu
     }
 
     // MARK: - 状态栏按钮更新（仅图标，随系统深色/浅色自动适配）
