@@ -32,8 +32,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         InputMethodManager.shared.onInputStateRefreshed = { [weak self] _ in
             self?.updateStatusBarButton()
         }
-        // onInputMethodChanged：带去重，触发 HUD 弹窗（连续相同状态不重复弹）
+        // onInputMethodChanged：带去重，App 自身发起的切换走此路径，同时刷新状态栏和 HUD
         InputMethodManager.shared.onInputMethodChanged = { [weak self] isChinese in
+            self?.updateStatusBarButton()
             self?.hudController?.showHUD(isChinese: isChinese)
         }
 
