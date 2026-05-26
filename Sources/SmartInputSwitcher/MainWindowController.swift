@@ -753,7 +753,7 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
 
     /// 手动选择 .app 文件，绕过自动扫描。
     /// 返回 nil 表示用户取消。
-    func pickAppManually() -> AppEntry? {
+    private func pickAppManually() -> AppEntry? {
         let panel = NSOpenPanel()
         panel.title = "选择应用"
         panel.message = "选择需要配置规则的 .app 文件"
