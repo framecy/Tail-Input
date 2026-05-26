@@ -2,7 +2,7 @@
 
 > 按应用自动切换输入法的 macOS 工具 — 轻量、无感知、零配置即用。
 
-**版本：v1.4.0** · macOS 13.0+ · Apple Silicon & Intel · [下载](https://github.com/framecy/Tail-Input/releases)
+**版本：v1.5.0** · macOS 13.0+ · Apple Silicon & Intel · [下载](https://github.com/framecy/Tail-Input/releases)
 
 ---
 
@@ -24,7 +24,7 @@
 
 ### DMG（推荐）
 
-1. 下载 [`Tail-Input-1.4.0.dmg`](https://github.com/framecy/Tail-Input/releases/latest)
+1. 下载 [`Tail-Input-1.5.0.dmg`](https://github.com/framecy/Tail-Input/releases/latest)
 2. 打开后将 `Tail Input.app` 拖入 `Applications`
 3. 首次运行完成 Onboarding 引导即可
 
@@ -123,12 +123,18 @@ WelcomeWindowController.swift → 首次运行引导
 | modeID 检测 | 兼容鼠须管等输入法的 Roman 子模式（macOS 26 修复） |
 | 乐观缓存 | 切换成功后立即写入目标 ID，避免 TIS 异步生效期间读取到旧状态 |
 
-### CapsLockInterceptor — CapsLock 直接切换（v1.4.0）
+### CapsLockInterceptor — CapsLock 三态切换（v1.5.0）
 
-通过 `CGEvent.tapCreate` 在会话层拦截 `flagsChanged` 事件，识别 keyCode `0x39`（CapsLock 键）：
+通过 `CGEvent.tapCreate` 在会话层拦截 `flagsChanged` 事件，识别 keyCode `0x39`（CapsLock 键），支持三种模式：
 
-- **短按（< 300ms）**：直接调用 `InputMethodManager` 切换输入法，无系统延迟
-- **长按（≥ 300ms）**：透传原始事件，保留 macOS 原生 Caps Lock 锁定行为
+| 模式 | 机制 |
+|---|---|
+| 关闭 | 不拦截，事件透传给系统 |
+| 兼容 | 短按（< 300ms）切换输入法；长按保留 macOS 原生大写锁定 |
+| 纯切换 | 仅响应 SET 方向事件（避免抖动）；50ms 去抖；IOKit 钳制 LED 不亮 / 大写锁定不生效 |
+
+- 纯切换模式通过 IOHIDSystem 将 `kIOHIDCapsLockState` 强制清零，实现零 LED 反馈
+- 首次启用纯切换模式弹窗检测 macOS「⇪ 切换 ABC」冲突，提供一键跳转系统设置
 - tap 创建成功即代表 AX 权限有效，绕过 `AXIsProcessTrusted()` 进程内缓存问题
 
 ### AccessibilityManager — 权限状态监控（v1.4.0）
@@ -154,6 +160,15 @@ WelcomeWindowController.swift → 首次运行引导
 ---
 
 ## 更新记录
+
+### v1.5.0
+- 新增：CapsLock 三态切换 — 关闭 / 兼容（短按切换 + 长按保留大写锁定）/ 纯切换（按下即切换 + IOKit 钳制 LED 不亮 + 完全禁用大写锁定），替代原单一兼容开关
+- 新增：纯切换模式冲突检测 — 首次启用时弹窗提示 macOS「⇪ 切换 ABC」设置冲突，提供「打开系统设置」一键跳转
+- 新增：应用选择器 Spotlight 搜索 — 通过 `mdfind` 发现全部已安装 App，覆盖无 Info.plist 应用（如部分游戏客户端）
+- 新增：应用选择器手动选择 — 顶栏「手动选择…」按钮，通过 NSOpenPanel 直接选取任意 .app 文件
+- 新增：无 Bundle ID 应用支持 — AppObserver 与 AppPicker 均支持以 `path:<绝对路径>` 作为合成标识符，正确应用策略
+- 修复：设置窗口所有键盘快捷键失效（Cmd+W/A/C/V/X/Z 等）— 将激活策略由 `.accessory` 改为 `.regular` 并注入标准菜单栏
+- 修复：UserDefaults 迁移 — 旧版 Bool `UseCapsLockSimulation` 自动迁移至新三态 `CapsLockMode` Int 键，升级无感
 
 ### v1.4.0
 - 新增：CapsLock 拦截器（CGEvent tap）— 短按 CapsLock（< 300ms）直接切换输入法，零系统延迟
