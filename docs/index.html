@@ -198,11 +198,11 @@
                     <div class="fc-horizontal-main">
                         <span class="fc-pill fc-pill-slate">⌨️</span>
                         <div>
-                            <h3 class="fc-title">CapsLock 直接切换</h3>
-                            <p class="fc-desc">通过 CGEvent tap 在系统层拦截 CapsLock 短按（&lt; 300ms），零延迟直接切换输入法；授权后 ≤ 1s 自动生效，无需重启。</p>
+                            <h3 class="fc-title">CapsLock 三态切换</h3>
+                            <p class="fc-desc">关闭 / 兼容（短按切换）/ 纯切换（按下即切换 + IOKit 钳制 LED，完全禁用大写锁定）。纯切换模式与 macOS 原生「⇪ 切换 ABC 输入源」互斥，启用前 App 会弹窗引导。</p>
                         </div>
                     </div>
-                    <span class="fc-note-pill">需要辅助功能权限（仅此功能）</span>
+                    <span class="fc-note-pill">非"关闭"模式需要辅助功能权限</span>
                 </div>
             </div>
         </section>

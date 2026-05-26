@@ -244,10 +244,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             MainWindowController.shared.refreshSidebar()
             return
         }
+        // .pure 模式与 macOS 原生 "用 CapsLock 切换 ABC" 互斥，首次启用前确认
+        if mode == .pure && !confirmPureModeMacOSConflict() {
+            MainWindowController.shared.refreshSidebar()
+            return
+        }
         if !manager.tryEnableCapsLockMode(mode) {
             requestAccessibilityForCapsLock(mode: mode)
         } else {
             MainWindowController.shared.refreshSidebar()
+        }
+    }
+
+    /// 首次启用 pure 模式时弹窗确认 macOS 原生 CapsLock 切换已关闭。
+    /// 已确认过的（UserDefaults flag 写入）会直接返回 true 不再骚扰。
+    ///
+    /// 返回 true 表示可以继续启用 .pure；false 表示用户取消，调用方应回滚 UI。
+    @discardableResult
+    func confirmPureModeMacOSConflict() -> Bool {
+        let ackKey = "PureModeMacOSCheckAcknowledged"
+        if UserDefaults.standard.bool(forKey: ackKey) { return true }
+
+        let alert = NSAlert()
+        alert.messageText = "纯切换模式需要关闭 macOS 原生 CapsLock 切换"
+        alert.informativeText = """
+        系统设置 → 键盘 → 输入法 → 编辑… 中的「使用 ⇪ 大写锁定键切换 ABC 输入源」必须保持关闭，\
+        否则 macOS 和 Tail Input 会同时切换输入法，互相抵消。
+
+        • 已经关闭了 → 点击「已关闭，启用」继续
+        • 还没关 → 点击「打开系统设置」前往，关闭后再回到本 App 选择纯切换
+        """
+        alert.addButton(withTitle: "已关闭，启用")
+        alert.addButton(withTitle: "打开系统设置")
+        alert.addButton(withTitle: "取消")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            UserDefaults.standard.set(true, forKey: ackKey)
+            return true
+        case .alertSecondButtonReturn:
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
+            return false
+        default:
+            return false
         }
     }
 

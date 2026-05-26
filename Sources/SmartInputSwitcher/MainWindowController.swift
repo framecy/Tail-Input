@@ -257,6 +257,13 @@ private final class SidebarView: NSView {
             mgr.capsLockMode = .off
             return
         }
+        // .pure 模式与 macOS 原生 "用 CapsLock 切换 ABC" 互斥，首次启用前确认
+        if mode == .pure,
+           let delegate = NSApp.delegate as? AppDelegate,
+           !delegate.confirmPureModeMacOSConflict() {
+            refresh()   // 回滚到当前实际模式
+            return
+        }
         // 切到 .compat / .pure — 实际尝试 tap 创建，失败说明缺权限
         if !mgr.tryEnableCapsLockMode(mode) {
             // 视觉先回弹到 .off，didBecomeActive 时若成功会刷新
