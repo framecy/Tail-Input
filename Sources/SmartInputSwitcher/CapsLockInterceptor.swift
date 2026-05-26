@@ -1,5 +1,6 @@
 import Cocoa
 import Carbon
+import IOKit.hid
 
 class CapsLockInterceptor {
     static let shared = CapsLockInterceptor()
@@ -7,17 +8,8 @@ class CapsLockInterceptor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    private var isCapsLockDown = false
-    private var capsLockDownTime: UInt64 = 0
-
-    // 短按 < 300ms → 切换输入法；长按 ≥ 300ms → 不处理（或可扩展为 Caps Lock）
-    private let shortPressThresholdNanos: UInt64 = 300_000_000
-
-    private static let timebaseInfo: mach_timebase_info_data_t = {
-        var info = mach_timebase_info_data_t()
-        mach_timebase_info(&info)
-        return info
-    }()
+    // 仅用于区分物理按下 / 抬起，CapsLock 每次完整点击产生两个 flagsChanged 事件
+    private var isKeyDown = false
 
     var isRunning: Bool { eventTap != nil }
 
@@ -58,7 +50,7 @@ class CapsLockInterceptor {
         CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         eventTap = nil
         runLoopSource = nil
-        isCapsLockDown = false
+        isKeyDown = false
         NSLog("[TailInput] CapsLock interceptor stopped")
     }
 
@@ -82,23 +74,44 @@ class CapsLockInterceptor {
         // 同时按着其他修饰键时放行，不拦截
         let otherModifiers: CGEventFlags = [.maskShift, .maskControl, .maskAlternate, .maskCommand]
         if !event.flags.intersection(otherModifiers).isEmpty {
-            isCapsLockDown = false
+            isKeyDown = false
             return Unmanaged.passUnretained(event)
         }
 
-        if !isCapsLockDown {
-            isCapsLockDown = true
-            capsLockDownTime = mach_absolute_time()
-            return nil
+        if !isKeyDown {
+            // 物理按下：立即切换，无需等抬起
+            isKeyDown = true
+            InputMethodManager.shared.toggleInputMethod()
+            // 强制清除系统 CapsLock 状态，防止 LED 亮起 / 大写锁定生效
+            forceCapsLockOff()
         } else {
-            isCapsLockDown = false
-            let elapsed = mach_absolute_time() - capsLockDownTime
-            let elapsedNanos = elapsed * UInt64(Self.timebaseInfo.numer) / UInt64(Self.timebaseInfo.denom)
+            // 物理抬起：直接吞掉
+            isKeyDown = false
+        }
+        return nil
+    }
 
-            if elapsedNanos < shortPressThresholdNanos {
-                InputMethodManager.shared.toggleInputMethod()
+    // 通过 IOKit 将 CapsLock 状态钳制为 OFF，使 LED 不亮且大写锁定不生效
+    private func forceCapsLockOff() {
+        var iterator: io_iterator_t = IO_OBJECT_NULL
+        guard IOServiceGetMatchingServices(
+            kIOMainPortDefault,
+            IOServiceMatching("AppleHIDKeyboardEventDriverV2"),
+            &iterator
+        ) == KERN_SUCCESS else { return }
+        defer { IOObjectRelease(iterator) }
+
+        var service = IOIteratorNext(iterator)
+        while service != IO_OBJECT_NULL {
+            var connect: io_connect_t = IO_OBJECT_NULL
+            // kIOHIDParamConnectType = 1
+            if IOServiceOpen(service, mach_task_self_, 1, &connect) == KERN_SUCCESS {
+                // kIOHIDCapsLockState = 0
+                IOHIDSetModifierLockState(connect, 0, false)
+                IOServiceClose(connect)
             }
-            return nil
+            IOObjectRelease(service)
+            service = IOIteratorNext(iterator)
         }
     }
 }
