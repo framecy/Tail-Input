@@ -507,9 +507,14 @@ private final class RuleRowView: NSTableRowView {
         self.onDelete = onDelete
 
         nameLabel.stringValue = app.appName
-        bundleLabel.stringValue = app.bundleId
+        // path: 合成 ID 在 UI 上去掉前缀，只露真实路径
+        bundleLabel.stringValue = app.bundleId.hasPrefix("path:")
+            ? String(app.bundleId.dropFirst("path:".count))
+            : app.bundleId
 
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleId) {
+        if app.bundleId.hasPrefix("path:") {
+            iconView.image = NSWorkspace.shared.icon(forFile: String(app.bundleId.dropFirst("path:".count)))
+        } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleId) {
             iconView.image = NSWorkspace.shared.icon(forFile: url.path)
         } else {
             iconView.image = NSWorkspace.shared.icon(forFileType: "app")
@@ -671,23 +676,42 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
         var seen = Set<String>()
         var result: [AppEntry] = []
 
-        func scan(_ dir: String) {
-            guard let items = try? fm.contentsOfDirectory(atPath: dir) else { return }
-            for item in items where item.hasSuffix(".app") {
+        // 递归扫描，最多 3 层（覆盖 /Applications/Setapp、/Applications/网易游戏 等子目录）
+        func scan(_ dir: String, depth: Int) {
+            guard depth >= 0, let items = try? fm.contentsOfDirectory(atPath: dir) else { return }
+            for item in items {
                 let path = "\(dir)/\(item)"
-                let plistPath = "\(path)/Contents/Info.plist"
-                guard let info = NSDictionary(contentsOfFile: plistPath),
-                      let bid = info["CFBundleIdentifier"] as? String,
-                      !seen.contains(bid) else { continue }
-                let name = (info["CFBundleDisplayName"] as? String)
-                    ?? (info["CFBundleName"] as? String)
-                    ?? item.replacingOccurrences(of: ".app", with: "")
-                seen.insert(bid)
-                result.append(AppEntry(bundleId: bid, name: name, url: URL(fileURLWithPath: path)))
+                if item.hasSuffix(".app") {
+                    addEntry(at: path, fallbackName: item)
+                } else if depth > 0 {
+                    var isDir: ObjCBool = false
+                    if fm.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue,
+                       !path.hasSuffix(".framework"), !path.hasSuffix(".bundle") {
+                        scan(path, depth: depth - 1)
+                    }
+                }
             }
         }
 
-        for dir in dirs { scan(dir) }
+        func addEntry(at path: String, fallbackName: String) {
+            let info = NSDictionary(contentsOfFile: "\(path)/Contents/Info.plist")
+            // 优先 CFBundleIdentifier；缺失时用 `path:<绝对路径>` 当合成 ID。
+            // AppObserver 在 NSRunningApplication.bundleIdentifier == nil 时会同样回退到此格式。
+            let bid: String
+            if let realBid = info?["CFBundleIdentifier"] as? String, !realBid.isEmpty {
+                bid = realBid
+            } else {
+                bid = "path:\(path)"
+            }
+            guard !seen.contains(bid) else { return }
+            let name = (info?["CFBundleDisplayName"] as? String)
+                ?? (info?["CFBundleName"] as? String)
+                ?? fallbackName.replacingOccurrences(of: ".app", with: "")
+            seen.insert(bid)
+            result.append(AppEntry(bundleId: bid, name: name, url: URL(fileURLWithPath: path)))
+        }
+
+        for dir in dirs { scan(dir, depth: 2) }
         return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
@@ -879,7 +903,10 @@ private final class AppBrowserRowView: NSTableRowView {
 
     func configure(name: String, bundleId: String, url: URL) {
         nameLabel.stringValue = name
-        bundleLabel.stringValue = bundleId
+        // path: 合成 ID 在 UI 上去掉前缀
+        bundleLabel.stringValue = bundleId.hasPrefix("path:")
+            ? String(bundleId.dropFirst("path:".count))
+            : bundleId
         iconView.image = NSWorkspace.shared.icon(forFile: url.path)
     }
 
