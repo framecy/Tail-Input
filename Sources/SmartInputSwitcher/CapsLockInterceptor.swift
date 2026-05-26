@@ -2,14 +2,34 @@ import Cocoa
 import Carbon
 import IOKit.hid
 
+/// CapsLock 拦截行为模式
+enum CapsLockMode: Int {
+    case off    = 0  // 关闭：不拦截，CapsLock 走系统原生行为
+    case compat = 1  // 兼容模式：物理抬起后判断时长，< 300ms 视为短按切换
+    case pure   = 2  // 纯切换模式：物理按下即切换，IOKit 钳制 LED，完全禁用大写锁定
+}
+
 class CapsLockInterceptor {
     static let shared = CapsLockInterceptor()
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    // 仅用于区分物理按下 / 抬起，CapsLock 每次完整点击产生两个 flagsChanged 事件
+    /// 当前生效的行为模式。.off 时不应启动 tap；.compat / .pure 由 handleEvent 分支处理。
+    var mode: CapsLockMode = .compat
+
+    // 物理按下状态。CapsLock 一次完整点击会产生两个 flagsChanged 事件
     private var isKeyDown = false
+
+    // 兼容模式专用：记录按下时刻用于判定短按
+    private var keyDownTime: UInt64 = 0
+    private let shortPressThresholdNanos: UInt64 = 300_000_000
+
+    private static let timebaseInfo: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
 
     var isRunning: Bool { eventTap != nil }
 
@@ -40,7 +60,7 @@ class CapsLockInterceptor {
         runLoopSource = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource!, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        NSLog("[TailInput] CapsLock interceptor started")
+        NSLog("[TailInput] CapsLock interceptor started (mode=\(mode))")
         return true
     }
 
@@ -78,17 +98,37 @@ class CapsLockInterceptor {
             return Unmanaged.passUnretained(event)
         }
 
-        if !isKeyDown {
-            // 物理按下：立即切换，无需等抬起
-            isKeyDown = true
-            InputMethodManager.shared.toggleInputMethod()
-            // 强制清除系统 CapsLock 状态，防止 LED 亮起 / 大写锁定生效
-            forceCapsLockOff()
-        } else {
-            // 物理抬起：直接吞掉
-            isKeyDown = false
+        switch mode {
+        case .off:
+            // 防御性分支：理论上 .off 时不会启动 tap，但若残留则直接放行
+            return Unmanaged.passUnretained(event)
+
+        case .pure:
+            if !isKeyDown {
+                isKeyDown = true
+                // 物理按下即切换，无延迟
+                InputMethodManager.shared.toggleInputMethod()
+                // 钳制系统 CapsLock 状态防止 LED 亮 / 大写锁定生效
+                forceCapsLockOff()
+            } else {
+                isKeyDown = false
+            }
+            return nil
+
+        case .compat:
+            if !isKeyDown {
+                isKeyDown = true
+                keyDownTime = mach_absolute_time()
+            } else {
+                isKeyDown = false
+                let elapsed = mach_absolute_time() - keyDownTime
+                let elapsedNanos = elapsed * UInt64(Self.timebaseInfo.numer) / UInt64(Self.timebaseInfo.denom)
+                if elapsedNanos < shortPressThresholdNanos {
+                    InputMethodManager.shared.toggleInputMethod()
+                }
+            }
+            return nil
         }
-        return nil
     }
 
     // 通过 IOKit 将 CapsLock 状态钳制为 OFF，使 LED 不亮且大写锁定不生效

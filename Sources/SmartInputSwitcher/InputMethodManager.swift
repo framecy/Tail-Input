@@ -30,31 +30,62 @@ class InputMethodManager: NSObject {
 
     // ── CapsLock 拦截模式 ──
     // UserDefaults 持久化的是"用户的意图"。实际 tap 是否运行由 CapsLockInterceptor.isRunning 决定。
-    // 两者可能短暂不一致：用户开启意图后等待 AX 授权期间 → 意图 true，isRunning false。
+    // 两者可能短暂不一致：用户开启意图后等待 AX 授权期间 → 意图 .compat/.pure，isRunning false。
     // AppDelegate 监听 NSApplication.didBecomeActive，在用户从系统设置回到 App 时重试 start()。
-    private static let kUseCapsLockInterceptKey = "UseCapsLockSimulation"
-    var useCapsLockIntercept: Bool {
-        get { UserDefaults.standard.bool(forKey: Self.kUseCapsLockInterceptKey) }
+    private static let kCapsLockModeKey         = "CapsLockMode"
+    private static let kUseCapsLockInterceptKey = "UseCapsLockSimulation" // legacy v1.4.0 之前
+
+    /// 用户期望的 CapsLock 拦截模式。读取时若新键缺失，自动从旧 Bool 键迁移。
+    var capsLockMode: CapsLockMode {
+        get {
+            if UserDefaults.standard.object(forKey: Self.kCapsLockModeKey) == nil {
+                // 迁移：旧版 Bool 为 true 视为 .compat（保留原 300ms 短按行为）
+                return UserDefaults.standard.bool(forKey: Self.kUseCapsLockInterceptKey) ? .compat : .off
+            }
+            let raw = UserDefaults.standard.integer(forKey: Self.kCapsLockModeKey)
+            return CapsLockMode(rawValue: raw) ?? .off
+        }
         set {
-            UserDefaults.standard.set(newValue, forKey: Self.kUseCapsLockInterceptKey)
-            if newValue {
-                CapsLockInterceptor.shared.start()
-            } else {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.kCapsLockModeKey)
+            // 同步 legacy key，便于回滚到旧版本时设置不丢失
+            UserDefaults.standard.set(newValue != .off, forKey: Self.kUseCapsLockInterceptKey)
+            CapsLockInterceptor.shared.mode = newValue
+            if newValue == .off {
                 CapsLockInterceptor.shared.stop()
+            } else {
+                CapsLockInterceptor.shared.start()
             }
         }
     }
 
-    /// UI 调用：尝试开启拦截器。返回 false 表示需要权限，调用方应触发授权流程。
-    /// 与直接 `useCapsLockIntercept = true` 的区别：仅在实际成功时才持久化意图，
-    /// 避免"开关 on 但拦截器没跑"的不一致状态。
+    /// 向后兼容：true ↔ 拦截器以某种模式运行；false ↔ .off。
+    /// 默认开启路径走 .compat，保持与 v1.4.0 之前一致的体验。
+    var useCapsLockIntercept: Bool {
+        get { capsLockMode != .off }
+        set { capsLockMode = newValue ? .compat : .off }
+    }
+
+    /// UI 调用：尝试以指定模式开启拦截器。返回 false 表示需要权限，调用方应触发授权流程。
+    /// 仅在 tap 实际创建成功时才持久化意图，避免"开关 on 但拦截器没跑"的不一致状态。
     @discardableResult
-    func tryEnableCapsLockIntercept() -> Bool {
+    func tryEnableCapsLockMode(_ mode: CapsLockMode) -> Bool {
+        if mode == .off {
+            capsLockMode = .off
+            return true
+        }
+        CapsLockInterceptor.shared.mode = mode
         if CapsLockInterceptor.shared.start() {
+            UserDefaults.standard.set(mode.rawValue, forKey: Self.kCapsLockModeKey)
             UserDefaults.standard.set(true, forKey: Self.kUseCapsLockInterceptKey)
             return true
         }
         return false
+    }
+
+    /// 向后兼容入口，等价于 tryEnableCapsLockMode(.compat)。
+    @discardableResult
+    func tryEnableCapsLockIntercept() -> Bool {
+        return tryEnableCapsLockMode(.compat)
     }
 
     override init() {

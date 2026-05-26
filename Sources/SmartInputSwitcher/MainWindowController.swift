@@ -150,7 +150,7 @@ final class MainWindowController: NSWindowController {
 private final class SidebarView: NSView {
     private let autoSwitch   = LabeledToggle(label: "自动切换输入法")
     private let loginItem    = LabeledToggle(label: "开机自启动")
-    private let capsLock     = LabeledToggle(label: "CapsLock 直接切换")
+    private let capsLockSeg  = NSSegmentedControl(labels: ["关闭", "兼容", "纯切换"], trackingMode: .selectOne, target: nil, action: nil)
     private let globalSeg    = NSSegmentedControl(labels: ["英文", "中文", "保持"], trackingMode: .selectOne, target: nil, action: nil)
 
     override init(frame: NSRect) {
@@ -163,7 +163,12 @@ private final class SidebarView: NSView {
         let mgr = InputMethodManager.shared
         autoSwitch.isOn = (NSApp.delegate as? AppDelegate)?.isEnabled ?? true
         loginItem.isOn  = SMAppService.mainApp.status == .enabled
-        capsLock.isOn   = mgr.useCapsLockIntercept
+
+        switch mgr.capsLockMode {
+        case .off:    capsLockSeg.selectedSegment = 0
+        case .compat: capsLockSeg.selectedSegment = 1
+        case .pure:   capsLockSeg.selectedSegment = 2
+        }
 
         switch mgr.globalDefaultStrategy {
         case .forceChinese: globalSeg.selectedSegment = 1
@@ -190,8 +195,14 @@ private final class SidebarView: NSView {
         stack.addArrangedSubview(autoSwitch)
         stack.addArrangedSubview(Spacer(4))
         stack.addArrangedSubview(loginItem)
-        stack.addArrangedSubview(Spacer(4))
-        stack.addArrangedSubview(capsLock)
+
+        // CapsLock section（三态：关闭 / 兼容 / 纯切换）
+        stack.addArrangedSubview(Spacer(20))
+        stack.addArrangedSubview(sectionLabel("CapsLock 切换"))
+        stack.addArrangedSubview(Spacer(6))
+        capsLockSeg.translatesAutoresizingMaskIntoConstraints = false
+        capsLockSeg.widthAnchor.constraint(equalToConstant: 188).isActive = true
+        stack.addArrangedSubview(capsLockSeg)
 
         // Global default section
         stack.addArrangedSubview(Spacer(20))
@@ -219,9 +230,8 @@ private final class SidebarView: NSView {
             let svc = SMAppService.mainApp
             try? isOn ? svc.register() : svc.unregister()
         }
-        capsLock.onChange = { [weak self] isOn in
-            self?.handleCapsLockToggle(isOn)
-        }
+        capsLockSeg.target = self
+        capsLockSeg.action = #selector(capsLockSegChanged)
         globalSeg.target = self
         globalSeg.action = #selector(globalSegChanged)
     }
@@ -234,16 +244,24 @@ private final class SidebarView: NSView {
         }
     }
 
-    private func handleCapsLockToggle(_ isOn: Bool) {
+    @objc private func capsLockSegChanged() {
+        let modes: [CapsLockMode] = [.off, .compat, .pure]
+        let sel = capsLockSeg.selectedSegment
+        guard sel >= 0 && sel < modes.count else { return }
+        handleCapsLockModeChange(modes[sel])
+    }
+
+    private func handleCapsLockModeChange(_ mode: CapsLockMode) {
         let mgr = InputMethodManager.shared
-        if !isOn {
-            mgr.useCapsLockIntercept = false
+        if mode == .off {
+            mgr.capsLockMode = .off
             return
         }
-        // 想开启 — 实际尝试 tap 创建，失败说明缺权限
-        if !mgr.tryEnableCapsLockIntercept() {
-            capsLock.isOn = false   // 视觉先回弹，didBecomeActive 时若成功会刷新
-            (NSApp.delegate as? AppDelegate)?.requestAccessibilityForCapsLock()
+        // 切到 .compat / .pure — 实际尝试 tap 创建，失败说明缺权限
+        if !mgr.tryEnableCapsLockMode(mode) {
+            // 视觉先回弹到 .off，didBecomeActive 时若成功会刷新
+            capsLockSeg.selectedSegment = 0
+            (NSApp.delegate as? AppDelegate)?.requestAccessibilityForCapsLock(mode: mode)
         }
     }
 

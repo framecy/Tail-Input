@@ -52,15 +52,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppObserver.shared.start()
 
-        // 启动时如果用户之前已开启 CapsLock 拦截，直接尝试 start —— tap 创建成功即代表权限有效
-        if InputMethodManager.shared.useCapsLockIntercept {
+        // 启动时如果用户之前已开启 CapsLock 拦截，恢复模式后尝试 start —— tap 创建成功即代表权限有效
+        let savedMode = InputMethodManager.shared.capsLockMode
+        if savedMode != .off {
+            CapsLockInterceptor.shared.mode = savedMode
             CapsLockInterceptor.shared.start()
         }
 
-        // 重启后自动开启：用户点击"立即重启"后由新进程在此处接管
+        // 重启后自动开启：用户点击"立即重启"后由新进程在此处接管，使用保存的模式
         if UserDefaults.standard.bool(forKey: "PendingCapsLockEnableOnLaunch") {
             UserDefaults.standard.removeObject(forKey: "PendingCapsLockEnableOnLaunch")
-            if InputMethodManager.shared.tryEnableCapsLockIntercept() {
+            let targetMode: CapsLockMode = savedMode == .off ? .compat : savedMode
+            if InputMethodManager.shared.tryEnableCapsLockMode(targetMode) {
                 // 重启后权限生效，刷新 UI（主窗口可能尚未创建，延迟执行）
                 DispatchQueue.main.async {
                     MainWindowController.shared.refreshSidebar()
@@ -186,11 +189,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
 
-        let capsLockItem = NSMenuItem(title: "CapsLock 直接切换",
-                                      action: #selector(toggleCapsLockIntercept(_:)),
-                                      keyEquivalent: "")
-        capsLockItem.state = InputMethodManager.shared.useCapsLockIntercept ? .on : .off
-        capsLockItem.toolTip = "拦截 CapsLock 按键并直接切换输入法，消除系统延迟，需要辅助功能权限"
+        // CapsLock 三态子菜单：关闭 / 兼容 / 纯切换
+        let capsLockItem = NSMenuItem(title: "CapsLock 切换", action: nil, keyEquivalent: "")
+        let capsSub = NSMenu()
+        let currentMode = InputMethodManager.shared.capsLockMode
+        let entries: [(String, CapsLockMode, String)] = [
+            ("关闭",   .off,    "不拦截 CapsLock，走系统原生行为"),
+            ("兼容模式", .compat, "短按 < 300ms 切换输入法，保留 macOS 原生 CapsLock 体验"),
+            ("纯切换模式", .pure,   "按下即切换，零延迟，完全禁用大写锁定（需辅助功能权限）"),
+        ]
+        for (title, mode, tip) in entries {
+            let item = NSMenuItem(title: title, action: #selector(setCapsLockMode(_:)), keyEquivalent: "")
+            item.tag = mode.rawValue
+            item.state = (mode == currentMode) ? .on : .off
+            item.toolTip = tip
+            capsSub.addItem(item)
+        }
+        capsLockItem.submenu = capsSub
         menu.addItem(capsLockItem)
 
         menu.addItem(NSMenuItem.separator())
@@ -221,22 +236,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppObserver.shared.isEnabled = isEnabled
     }
 
-    @objc func toggleCapsLockIntercept(_ sender: NSMenuItem) {
+    @objc func setCapsLockMode(_ sender: NSMenuItem) {
+        guard let mode = CapsLockMode(rawValue: sender.tag) else { return }
         let manager = InputMethodManager.shared
-        if manager.useCapsLockIntercept {
-            manager.useCapsLockIntercept = false
+        if mode == .off {
+            manager.capsLockMode = .off
+            MainWindowController.shared.refreshSidebar()
             return
         }
-        // 想开启 — 用 tryEnable 实际尝试 tap 创建，成功才持久化
-        if !manager.tryEnableCapsLockIntercept() {
-            requestAccessibilityForCapsLock()
+        if !manager.tryEnableCapsLockMode(mode) {
+            requestAccessibilityForCapsLock(mode: mode)
+        } else {
+            MainWindowController.shared.refreshSidebar()
         }
     }
 
     /// 引导用户去系统设置授权辅助功能。
     /// 不再调用 promptForPermission()（避免系统弹窗与本弹窗叠加干扰 TCC 状态）。
     /// CGEvent.tapCreate 失败本身已会让 App 出现在辅助功能列表里，无需额外触发。
-    func requestAccessibilityForCapsLock() {
+    func requestAccessibilityForCapsLock(mode: CapsLockMode = .compat) {
         let alert = NSAlert()
         alert.messageText = "请授权辅助功能"
         alert.informativeText = "CapsLock 直接切换需要 Tail Input 在「系统设置 → 隐私与安全 → 辅助功能」中被授权。\n\n点击「打开系统设置」，在列表中找到 Tail Input 并开启开关，然后切回本 App 即可自动激活。"
@@ -247,23 +265,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 直接打开系统设置，不触发额外系统弹窗
         AccessibilityManager.shared.openAccessibilitySettings()
-        // 标记"用户期望开启"，didBecomeActive 时自动重试
-        pendingCapsLockEnable = true
+        // 标记"用户期望以此模式开启"，didBecomeActive 时自动重试
+        pendingCapsLockMode = mode
     }
 
-    /// 用户期望开启拦截器但当前没权限，等待用户回到 App 时重试
-    private var pendingCapsLockEnable = false
+    /// 用户期望开启拦截器但当前没权限，等待用户回到 App 时重试。
+    /// nil 表示无待处理；非 nil 即重试目标模式。
+    private var pendingCapsLockMode: CapsLockMode?
 
     @objc func handleAppDidBecomeActive() {
-        guard pendingCapsLockEnable else { return }
-        if InputMethodManager.shared.tryEnableCapsLockIntercept() {
+        guard let mode = pendingCapsLockMode else { return }
+        if InputMethodManager.shared.tryEnableCapsLockMode(mode) {
             // 权限已获取，进程内 tap 创建成功
-            pendingCapsLockEnable = false
+            pendingCapsLockMode = nil
             MainWindowController.shared.refreshSidebar()
         } else {
             // 权限已授予但当前进程仍无法创建 tap（macOS 部分版本需重启进程）
             // 标记重启意图，只弹一次
-            pendingCapsLockEnable = false
+            pendingCapsLockMode = nil
             showRestartForCapsLockAlert()
         }
     }
