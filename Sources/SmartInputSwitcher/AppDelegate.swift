@@ -21,9 +21,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 装配主菜单 — Cmd+W / Cmd+A / Cmd+C / Cmd+V / Cmd+Q 等系统快捷键的来源
         setupMainMenu()
 
-        // 固定 28pt：比 squareLength(22pt) 多给 6pt breathing room，
-        // 让 character.textbox 与 keyboard 两个图标视觉重量对等，切换时宽度不跳变
-        statusItem = NSStatusBar.system.statusItem(withLength: 28)
+        // 固定 32pt：容纳胶囊徽章（中 / En），切换时宽度不跳变
+        statusItem = NSStatusBar.system.statusItem(withLength: 32)
 
         updateStatusBarButton()
 
@@ -170,34 +169,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    // MARK: - 状态栏按钮更新（仅图标，随系统深色/浅色自动适配）
+    // MARK: - 状态栏按钮更新
 
     func updateStatusBarButton() {
         guard let button = statusItem.button else { return }
         let isChinese = InputMethodManager.shared.cachedIsChinese
-
-        // 中文：character.textbox（笔画感）  英文：keyboard（直观）
-        let symbolName = isChinese ? "character.textbox" : "keyboard"
-
-        // 13pt medium weight 在 28pt 宽度内与系统原生图标视觉对齐
-        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-            .applying(NSImage.SymbolConfiguration(hierarchicalColor: .labelColor))
-
-        if let icon = NSImage(systemSymbolName: symbolName, accessibilityDescription: isChinese ? "中文" : "英文")?
-                .withSymbolConfiguration(config) {
-            icon.isTemplate = true   // 模板图像：系统自动处理深/浅色及高亮状态
-            button.image = icon
-            button.imagePosition = .imageOnly
-            button.imageScaling = .scaleProportionallyDown
-        } else {
-            // 兜底：等宽字符
-            button.image = nil
-            button.title = isChinese ? "中" : "En"
-            button.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        }
-
+        button.image = makeStatusBadge(isChinese: isChinese)
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
         button.title = ""
         button.attributedTitle = NSAttributedString()
+    }
+
+    /// 绘制胶囊徽章：中文 = 橙色底白字"中"，英文 = 蓝色底白字"En"。
+    /// isTemplate = false 保留颜色，深色/浅色菜单栏均清晰可辨。
+    private func makeStatusBadge(isChinese: Bool) -> NSImage {
+        let imgW: CGFloat = 30
+        let imgH: CGFloat = 18
+        let pillW: CGFloat = 28
+        let pillH: CGFloat = 16
+        let radius: CGFloat = 5
+
+        let image = NSImage(size: NSSize(width: imgW, height: imgH), flipped: false) { _ in
+            let pillRect = NSRect(
+                x: (imgW - pillW) / 2,
+                y: (imgH - pillH) / 2,
+                width: pillW,
+                height: pillH
+            )
+            let path = NSBezierPath(roundedRect: pillRect, xRadius: radius, yRadius: radius)
+
+            // 橙色（中文）/ 蓝色（英文）— 系统色在深/浅色模式下对比度均合格
+            let bgColor = isChinese ? NSColor.systemOrange : NSColor.systemBlue
+            bgColor.setFill()
+            path.fill()
+
+            let label      = isChinese ? "中" : "En"
+            let fontSize   = isChinese ? CGFloat(11) : CGFloat(10)
+            let weight     = isChinese ? NSFont.Weight.bold : NSFont.Weight.semibold
+            let font       = NSFont.systemFont(ofSize: fontSize, weight: weight)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.white,
+            ]
+            let str      = NSAttributedString(string: label, attributes: attrs)
+            let textSize = str.size()
+            str.draw(at: NSPoint(
+                x: (imgW - textSize.width)  / 2,
+                y: (imgH - textSize.height) / 2
+            ))
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 
     /// 构建菜单内容（仅在菜单即将显示时调用）
@@ -223,8 +247,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Strategy options — indented, with SF Symbol icons
             let strategies: [(AppInputStrategy, String, String)] = [
                 (.globalDefault, "跟随全局设置", "circle"),
-                (.forceEnglish,  "切换为英文",   "keyboard"),
-                (.forceChinese,  "切换为中文",   "character.textbox"),
+                (.forceEnglish,  "切换为英文",   "e.circle"),
+                (.forceChinese,  "切换为中文",   "globe.asia.australia"),
                 (.keepCurrent,   "保持不变",     "arrow.uturn.backward"),
             ]
             let iconCfg = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
