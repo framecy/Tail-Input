@@ -673,10 +673,33 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
             "/System/Applications",
             "/System/Applications/Utilities",
         ]
-        var seen = Set<String>()
+        var seenPaths = Set<String>()
         var result: [AppEntry] = []
 
-        // 递归扫描，最多 3 层（覆盖 /Applications/Setapp、/Applications/网易游戏 等子目录）
+        func addEntry(at rawPath: String, fallbackName: String) {
+            let path = (rawPath as NSString).standardizingPath
+            guard !seenPaths.contains(path) else { return }
+            // .app 包必须真实存在（mdfind 索引可能滞后）
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else { return }
+
+            let info = NSDictionary(contentsOfFile: "\(path)/Contents/Info.plist")
+            // 优先 CFBundleIdentifier；缺失时用 `path:<绝对路径>` 当合成 ID。
+            // AppObserver 在 NSRunningApplication.bundleIdentifier == nil 时会同样回退到此格式。
+            let bid: String
+            if let realBid = info?["CFBundleIdentifier"] as? String, !realBid.isEmpty {
+                bid = realBid
+            } else {
+                bid = "path:\(path)"
+            }
+            let name = (info?["CFBundleDisplayName"] as? String)
+                ?? (info?["CFBundleName"] as? String)
+                ?? URL(fileURLWithPath: path).lastPathComponent.replacingOccurrences(of: ".app", with: "")
+            seenPaths.insert(path)
+            result.append(AppEntry(bundleId: bid, name: name, url: URL(fileURLWithPath: path)))
+        }
+
+        // ① 文件系统递归扫描，覆盖常见安装位置（深度 2）
         func scan(_ dir: String, depth: Int) {
             guard depth >= 0, let items = try? fm.contentsOfDirectory(atPath: dir) else { return }
             for item in items {
@@ -692,27 +715,72 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
                 }
             }
         }
+        for dir in dirs { scan(dir, depth: 2) }
 
-        func addEntry(at path: String, fallbackName: String) {
-            let info = NSDictionary(contentsOfFile: "\(path)/Contents/Info.plist")
-            // 优先 CFBundleIdentifier；缺失时用 `path:<绝对路径>` 当合成 ID。
-            // AppObserver 在 NSRunningApplication.bundleIdentifier == nil 时会同样回退到此格式。
-            let bid: String
-            if let realBid = info?["CFBundleIdentifier"] as? String, !realBid.isEmpty {
-                bid = realBid
-            } else {
-                bid = "path:\(path)"
-            }
-            guard !seen.contains(bid) else { return }
-            let name = (info?["CFBundleDisplayName"] as? String)
-                ?? (info?["CFBundleName"] as? String)
-                ?? fallbackName.replacingOccurrences(of: ".app", with: "")
-            seen.insert(bid)
-            result.append(AppEntry(bundleId: bid, name: name, url: URL(fileURLWithPath: path)))
+        // ② Spotlight 兜底（mdfind 同步子进程），捕获文件系统扫描遗漏的非标准 bundle
+        for path in scanViaSpotlight() {
+            addEntry(at: path, fallbackName: URL(fileURLWithPath: path).lastPathComponent)
         }
 
-        for dir in dirs { scan(dir, depth: 2) }
         return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// 同步调用 mdfind 列出系统 Spotlight 索引到的所有 .app bundle 路径。
+    /// 失败 / 超时返回空数组，由上层文件系统扫描兜底。
+    private func scanViaSpotlight() -> [String] {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+        proc.arguments = ["kMDItemContentTypeTree == 'com.apple.application-bundle'"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+
+        do {
+            try proc.run()
+        } catch {
+            return []
+        }
+        // 2 秒安全超时（mdfind 通常 <100ms 返回）
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak proc] in
+            if proc?.isRunning == true { proc?.terminate() }
+        }
+        proc.waitUntilExit()
+
+        guard let output = try? pipe.fileHandleForReading.readToEnd(),
+              let str = String(data: output, encoding: .utf8) else { return [] }
+        return str.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// 手动选择 .app 文件，绕过自动扫描。
+    /// 返回 nil 表示用户取消。
+    func pickAppManually() -> AppEntry? {
+        let panel = NSOpenPanel()
+        panel.title = "选择应用"
+        panel.message = "选择需要配置规则的 .app 文件"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.treatsFilePackagesAsDirectories = false  // .app 当作单一文件而非目录
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        if #available(macOS 11.0, *) {
+            panel.allowedContentTypes = [.application]
+        } else {
+            panel.allowedFileTypes = ["app"]
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+
+        let path = url.path
+        let info = NSDictionary(contentsOfFile: "\(path)/Contents/Info.plist")
+        let bid: String
+        if let realBid = info?["CFBundleIdentifier"] as? String, !realBid.isEmpty {
+            bid = realBid
+        } else {
+            bid = "path:\(path)"
+        }
+        let name = (info?["CFBundleDisplayName"] as? String)
+            ?? (info?["CFBundleName"] as? String)
+            ?? url.lastPathComponent.replacingOccurrences(of: ".app", with: "")
+        return AppEntry(bundleId: bid, name: name, url: url)
     }
 
     private func applyFilter() {
@@ -740,15 +808,26 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
         titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        // 手动选择按钮：兜底入口，搜不到的 .app 可以直接 NSOpenPanel 选
+        let manualBtn = NSButton(title: "手动选择…", target: self, action: #selector(manualPickTapped))
+        manualBtn.bezelStyle = .inline
+        manualBtn.isBordered = false
+        manualBtn.font = .systemFont(ofSize: 12)
+        manualBtn.contentTintColor = .controlAccentColor
+        manualBtn.translatesAutoresizingMaskIntoConstraints = false
+
         let topBar = NSView()
         topBar.translatesAutoresizingMaskIntoConstraints = false
         topBar.addSubview(backBtn)
         topBar.addSubview(titleLabel)
+        topBar.addSubview(manualBtn)
         NSLayoutConstraint.activate([
             backBtn.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
             backBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             titleLabel.centerXAnchor.constraint(equalTo: topBar.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            manualBtn.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
+            manualBtn.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
             topBar.heightAnchor.constraint(equalToConstant: 36),
         ])
 
@@ -856,6 +935,20 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let strategy = (idx >= 0 && idx < strategies.count) ? strategies[idx] : .forceEnglish
         ConfiguredAppStore.shared.setStrategy(strategy, for: bundleId, appName: appName)
         onAppAdded?()
+    }
+
+    @objc private func manualPickTapped() {
+        guard let entry = pickAppManually() else { return }
+        // 把手动挑选的 entry 塞进当前列表（如果已存在则只选中），并清空搜索高亮它
+        if !allApps.contains(where: { $0.bundleId == entry.bundleId }) {
+            allApps.insert(entry, at: 0)
+        }
+        searchField.stringValue = ""
+        applyFilter()
+        if let idx = filtered.firstIndex(where: { $0.bundleId == entry.bundleId }) {
+            tableView.selectRowIndexes(IndexSet(integer: idx), byExtendingSelection: false)
+            tableView.scrollRowToVisible(idx)
+        }
     }
 
     // MARK: NSTableViewDataSource
