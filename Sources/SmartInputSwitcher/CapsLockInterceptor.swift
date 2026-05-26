@@ -25,6 +25,13 @@ class CapsLockInterceptor {
     private var keyDownTime: UInt64 = 0
     private let shortPressThresholdNanos: UInt64 = 300_000_000
 
+    // 纯切换模式专用：去重窗口
+    // CapsLock 一次物理按下可能产生多个 flagsChanged 事件（DOWN + UP），
+    // 加上 IOHIDSetModifierLockState 反向修改状态会再触发一次回响事件，flip-flop
+    // 状态机会被打乱。直接用时间窗去重最稳：100ms 内的事件视为同一次按下的派生。
+    private var lastPureTriggerNanos: UInt64 = 0
+    private let pureDebounceNanos: UInt64 = 100_000_000
+
     private static let timebaseInfo: mach_timebase_info_data_t = {
         var info = mach_timebase_info_data_t()
         mach_timebase_info(&info)
@@ -71,6 +78,7 @@ class CapsLockInterceptor {
         eventTap = nil
         runLoopSource = nil
         isKeyDown = false
+        lastPureTriggerNanos = 0
         NSLog("[TailInput] CapsLock interceptor stopped")
     }
 
@@ -104,15 +112,18 @@ class CapsLockInterceptor {
             return Unmanaged.passUnretained(event)
 
         case .pure:
-            if !isKeyDown {
-                isKeyDown = true
-                // 物理按下即切换，无延迟
-                InputMethodManager.shared.toggleInputMethod()
-                // 钳制系统 CapsLock 状态防止 LED 亮 / 大写锁定生效
-                forceCapsLockOff()
-            } else {
-                isKeyDown = false
+            // 时间窗去重：100ms 内的事件视为同一次物理按下产生的派生事件
+            // （包括 DOWN/UP 两个原始事件 + IOHIDSetModifierLockState 反向触发的回响）
+            let now = mach_absolute_time()
+            let elapsedNanos = (now - lastPureTriggerNanos) * UInt64(Self.timebaseInfo.numer) / UInt64(Self.timebaseInfo.denom)
+            if lastPureTriggerNanos != 0 && elapsedNanos < pureDebounceNanos {
+                return nil
             }
+            lastPureTriggerNanos = now
+
+            // 真实物理按下：切换输入法 + 强制清掉 CapsLock 锁定状态
+            InputMethodManager.shared.toggleInputMethod()
+            forceCapsLockOff()
             return nil
 
         case .compat:
@@ -131,28 +142,39 @@ class CapsLockInterceptor {
         }
     }
 
-    // 通过 IOKit 将 CapsLock 状态钳制为 OFF，使 LED 不亮且大写锁定不生效
+    // 通过 IOKit 将 CapsLock 状态钳制为 OFF，使 LED 不亮且大写锁定不生效。
+    // 优先尝试 IOHIDSystem 统一接口（全键盘通用），失败再回退到 Apple 内置驱动。
     private func forceCapsLockOff() {
+        if applyCapsLockOff(serviceClass: "IOHIDSystem") { return }
+        _ = applyCapsLockOff(serviceClass: "AppleHIDKeyboardEventDriverV2")
+    }
+
+    @discardableResult
+    private func applyCapsLockOff(serviceClass: String) -> Bool {
         var iterator: io_iterator_t = IO_OBJECT_NULL
         guard IOServiceGetMatchingServices(
             kIOMainPortDefault,
-            IOServiceMatching("AppleHIDKeyboardEventDriverV2"),
+            IOServiceMatching(serviceClass),
             &iterator
-        ) == KERN_SUCCESS else { return }
+        ) == KERN_SUCCESS else { return false }
         defer { IOObjectRelease(iterator) }
 
+        var succeeded = false
         var service = IOIteratorNext(iterator)
         while service != IO_OBJECT_NULL {
             var connect: io_connect_t = IO_OBJECT_NULL
             // kIOHIDParamConnectType = 1
             if IOServiceOpen(service, mach_task_self_, 1, &connect) == KERN_SUCCESS {
                 // kIOHIDCapsLockState = 0
-                IOHIDSetModifierLockState(connect, 0, false)
+                if IOHIDSetModifierLockState(connect, 0, false) == KERN_SUCCESS {
+                    succeeded = true
+                }
                 IOServiceClose(connect)
             }
             IOObjectRelease(service)
             service = IOIteratorNext(iterator)
         }
+        return succeeded
     }
 }
 
