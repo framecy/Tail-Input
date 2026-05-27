@@ -20,6 +20,12 @@ class InputMethodManager: NSObject {
 
     private var lastDeliveredInputState: Bool?
 
+    // 拦截 TIS 通知里的过渡"幽灵"读数：
+    // TISSelectInputSource 异步生效，通知在状态稳定前就到达，首次 re-read 会拿到旧值。
+    // 记录"我们期望的目标"，在 150ms 窗口内若 TIS 报告值与目标不符，直接用目标值覆盖。
+    private var pendingSwitchTarget: Bool? = nil
+    private var pendingSwitchDeadline: Date = .distantPast
+
     // ── 当前应用信息 ──
     var currentAppBundleIdentifier: String?
     var currentAppName: String?
@@ -308,8 +314,7 @@ class InputMethodManager: NSObject {
     private func selectInputSource(_ source: TISInputSource, id: String?, chinese: Bool) -> OSStatus {
         let result = TISSelectInputSource(source)
         if result == noErr {
-            // 乐观更新：TISSelectInputSource 是异步生效的，立即 re-read 会拿到旧值。
-            // 这里直接写入目标值；TIS 通知到来后 handleInputMethodChange 会用真实值覆盖。
+            // 乐观更新：TISSelectInputSource 异步生效，立即 re-read 会拿到旧值。
             cachedIsChinese = chinese
             cachedInputSourceID = id
             if chinese {
@@ -317,6 +322,9 @@ class InputMethodManager: NSObject {
             } else {
                 cachedEnglishInputSourceID = id
             }
+            // 150ms 窗口：告知通知处理器"TIS 在此期间报告旧值属正常，应忽略"
+            pendingSwitchTarget = chinese
+            pendingSwitchDeadline = Date(timeIntervalSinceNow: 0.15)
             deliverInputMethodChanged(chinese)
             NSLog("[TailInput] switched to %@", chinese ? "Chinese" : "English")
         }
@@ -407,18 +415,36 @@ class InputMethodManager: NSObject {
 
     @objc private func handleInputMethodChange() {
         refreshCachedInputSource()
-        let isChinese = cachedIsChinese
-        // 无条件刷新状态栏（绕过 HUD 去重逻辑）
-        onInputStateRefreshed?(isChinese)
-        deliverInputMethodChanged(isChinese)
-        // TIS 通知有时早于状态实际生效 ~60ms，延迟补读一次
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+
+        // 若在 pendingSwitchTarget 窗口内 TIS 报告的是旧值，用目标值替代以避免闪烁。
+        // 这发生在 TISSelectInputSource 异步生效期间：通知先到，但状态尚未稳定。
+        let effectiveState: Bool
+        if let target = pendingSwitchTarget,
+           Date() < pendingSwitchDeadline,
+           cachedIsChinese != target {
+            // TIS 尚未稳定：继续使用乐观目标值，并对齐缓存防止延迟补读产生假"变化"
+            effectiveState = target
+            cachedIsChinese = target
+        } else {
+            pendingSwitchTarget = nil
+            effectiveState = cachedIsChinese
+        }
+
+        onInputStateRefreshed?(effectiveState)
+        deliverInputMethodChanged(effectiveState)
+
+        // 延迟补读：捕获 TIS 通知早到但状态确实需要时间落地的情况
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             guard let self = self else { return }
             let prev = self.cachedIsChinese
             self.refreshCachedInputSource()
-            if self.cachedIsChinese != prev {
-                self.onInputStateRefreshed?(self.cachedIsChinese)
-                self.deliverInputMethodChanged(self.cachedIsChinese)
+            let settled = self.cachedIsChinese
+            if settled == self.pendingSwitchTarget {
+                self.pendingSwitchTarget = nil
+            }
+            if settled != prev {
+                self.onInputStateRefreshed?(settled)
+                self.deliverInputMethodChanged(settled)
             }
         }
     }
