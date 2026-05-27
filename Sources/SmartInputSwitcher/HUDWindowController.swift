@@ -22,12 +22,30 @@ class HUDWindowController: NSWindowController {
     private let iconView = NSImageView()
     private let label    = NSTextField(labelWithString: "")
     private var hideWorkItem: DispatchWorkItem?
+    private var iconWidthConstraint:  NSLayoutConstraint?
+    private var iconHeightConstraint: NSLayoutConstraint?
 
-    // ── 持久化位置偏好 ──
+    // ── 持久化 key ──
     private static let kPositionKey    = "HUDPosition"
     private static let kScreenIndexKey = "HUDScreenIndex"
+    private static let kSizePresetKey  = "HUDSizePreset"   // 0=小, 1=中, 2=大
+    private static let kShowIconKey    = "HUDShowIcon"
+    private static let kTextStyleKey   = "HUDTextStyle"    // 0=简短, 1=完整
 
-    /// 当前选中的 HUD 位置，持久化到 UserDefaults
+    // ── 尺寸配置 ──
+    private struct SizeConfig {
+        let hudW: CGFloat; let hudH: CGFloat
+        let iconPt: CGFloat; let fontSize: CGFloat; let iconSide: CGFloat
+    }
+    private static let sizeConfigs: [SizeConfig] = [
+        SizeConfig(hudW: 140, hudH: 52,  iconPt: 16, fontSize: 14, iconSide: 18),  // 小
+        SizeConfig(hudW: 178, hudH: 66,  iconPt: 22, fontSize: 18, iconSide: 24),  // 中
+        SizeConfig(hudW: 220, hudH: 82,  iconPt: 28, fontSize: 22, iconSide: 30),  // 大
+    ]
+    private var currentSizeConfig: SizeConfig { Self.sizeConfigs[hudSizePreset] }
+
+    // MARK: Preferences
+
     var hudPosition: HUDPosition {
         get {
             let raw = UserDefaults.standard.integer(forKey: Self.kPositionKey)
@@ -44,6 +62,33 @@ class HUDWindowController: NSWindowController {
         }
         set { UserDefaults.standard.set(newValue, forKey: Self.kScreenIndexKey) }
     }
+
+    var hudSizePreset: Int {
+        get {
+            guard UserDefaults.standard.object(forKey: Self.kSizePresetKey) != nil else { return 1 }
+            return min(max(UserDefaults.standard.integer(forKey: Self.kSizePresetKey), 0), 2)
+        }
+        set { UserDefaults.standard.set(min(max(newValue, 0), 2), forKey: Self.kSizePresetKey) }
+    }
+
+    var hudShowIcon: Bool {
+        get {
+            guard UserDefaults.standard.object(forKey: Self.kShowIconKey) != nil else { return true }
+            return UserDefaults.standard.bool(forKey: Self.kShowIconKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.kShowIconKey) }
+    }
+
+    /// 0 = 简短（中文/英文），1 = 完整（简体中文/English）
+    var hudTextStyle: Int {
+        get {
+            guard UserDefaults.standard.object(forKey: Self.kTextStyleKey) != nil else { return 1 }
+            return UserDefaults.standard.integer(forKey: Self.kTextStyleKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: Self.kTextStyleKey) }
+    }
+
+    // MARK: Init
 
     init() {
         let window = NSWindow(
@@ -102,9 +147,13 @@ class HUDWindowController: NSWindowController {
         stack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
 
+        let wc = iconView.widthAnchor.constraint(equalToConstant: 24)
+        let hc = iconView.heightAnchor.constraint(equalToConstant: 24)
+        iconWidthConstraint  = wc
+        iconHeightConstraint = hc
+
         NSLayoutConstraint.activate([
-            iconView.widthAnchor.constraint(equalToConstant: 24),
-            iconView.heightAnchor.constraint(equalToConstant: 24),
+            wc, hc,
             stack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
@@ -166,22 +215,39 @@ class HUDWindowController: NSWindowController {
     // MARK: - 显示
 
     func showHUD(isChinese: Bool) {
-        let symbolName = isChinese ? "character.textbox" : "keyboard"
-        let config = NSImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
-        iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-        label.stringValue = isChinese ? "简体中文" : "English"
+        let cfg = currentSizeConfig
+
+        // 更新图标可见性与大小
+        iconView.isHidden = !hudShowIcon
+        if hudShowIcon {
+            let symbolName = isChinese ? "character.textbox" : "keyboard"
+            let config = NSImage.SymbolConfiguration(pointSize: cfg.iconPt, weight: .semibold)
+            iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config)
+            iconWidthConstraint?.constant  = cfg.iconSide
+            iconHeightConstraint?.constant = cfg.iconSide
+        }
+
+        // 更新文字内容与字号
+        if hudTextStyle == 0 {
+            label.stringValue = isChinese ? "中文" : "英文"
+        } else {
+            label.stringValue = isChinese ? "简体中文" : "English"
+        }
+        label.font = NSFont.systemFont(ofSize: cfg.fontSize, weight: .regular)
 
         hideWorkItem?.cancel()
 
-        // nearMouse 每次都重新定位；固定位置在 HUD 已可见时跳过淡入动画
+        let hudSize = NSSize(width: cfg.hudW, height: cfg.hudH)
+        let hudRect = frameForHUD(size: hudSize, position: hudPosition, screen: targetScreen())
+
+        // nearMouse 每次都重新定位；固定位置在 HUD 已可见时只更新位置/尺寸，跳过淡入动画
         if hudPosition != .nearMouse && window?.alphaValue == 1.0 {
+            window?.setFrame(hudRect, display: true)
             resetHideTimer()
             return
         }
 
-        let hudSize = NSSize(width: 178, height: 66)
-        let hudRect = frameForHUD(size: hudSize, position: hudPosition, screen: targetScreen())
         window?.setFrame(hudRect, display: true)
         window?.orderFront(nil)
 

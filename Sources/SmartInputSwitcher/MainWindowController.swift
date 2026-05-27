@@ -14,7 +14,7 @@ final class MainWindowController: NSWindowController {
 
     private init() {
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 720, height: 700),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -155,6 +155,9 @@ private final class SidebarView: NSView {
     private let hudPicker    = HUDPositionPicker()
     private let hudScreenRow = NSView()
     private let hudScreenPopup = NSPopUpButton()
+    private let hudSizeSeg   = NSSegmentedControl(labels: ["小", "中", "大"], trackingMode: .selectOne, target: nil, action: nil)
+    private let hudIconToggle = LabeledToggle(label: "显示图标")
+    private let hudTextSeg   = NSSegmentedControl(labels: ["简短", "完整"], trackingMode: .selectOne, target: nil, action: nil)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -179,10 +182,13 @@ private final class SidebarView: NSView {
         default:            globalSeg.selectedSegment = 0
         }
 
-        // HUD 位置
+        // HUD 位置 / 大小 / 内容
         if let hud = (NSApp.delegate as? AppDelegate)?.hudController {
             hudPicker.setSelected(hud.hudPosition)
             refreshScreenPopup(hud: hud)
+            hudSizeSeg.selectedSegment = hud.hudSizePreset
+            hudIconToggle.isOn = hud.hudShowIcon
+            hudTextSeg.selectedSegment = hud.hudTextStyle
         }
     }
 
@@ -229,6 +235,24 @@ private final class SidebarView: NSView {
         stack.addArrangedSubview(Spacer(4))
         buildHUDScreenRow(into: stack)
 
+        // HUD 大小
+        stack.addArrangedSubview(Spacer(16))
+        stack.addArrangedSubview(sectionLabel("HUD 大小"))
+        stack.addArrangedSubview(Spacer(6))
+        hudSizeSeg.translatesAutoresizingMaskIntoConstraints = false
+        hudSizeSeg.widthAnchor.constraint(equalToConstant: 188).isActive = true
+        stack.addArrangedSubview(hudSizeSeg)
+
+        // HUD 提示内容
+        stack.addArrangedSubview(Spacer(16))
+        stack.addArrangedSubview(sectionLabel("HUD 内容"))
+        stack.addArrangedSubview(Spacer(6))
+        stack.addArrangedSubview(hudIconToggle)
+        stack.addArrangedSubview(Spacer(4))
+        hudTextSeg.translatesAutoresizingMaskIntoConstraints = false
+        hudTextSeg.widthAnchor.constraint(equalToConstant: 188).isActive = true
+        stack.addArrangedSubview(hudTextSeg)
+
         // Spacer pushes footer down
         let flex = NSView()
         flex.setContentHuggingPriority(.fittingSizeCompression, for: .vertical)
@@ -258,6 +282,16 @@ private final class SidebarView: NSView {
                 self?.refreshScreenPopup(hud: hud)
             }
         }
+
+        hudSizeSeg.target = self
+        hudSizeSeg.action = #selector(hudSizeSegChanged)
+
+        hudIconToggle.onChange = { isOn in
+            (NSApp.delegate as? AppDelegate)?.hudController?.hudShowIcon = isOn
+        }
+
+        hudTextSeg.target = self
+        hudTextSeg.action = #selector(hudTextSegChanged)
     }
 
     @objc private func globalSegChanged() {
@@ -409,6 +443,14 @@ private final class SidebarView: NSView {
     @objc private func screenPopupChanged() {
         guard let hud = (NSApp.delegate as? AppDelegate)?.hudController else { return }
         hud.hudScreenIndex = hudScreenPopup.indexOfSelectedItem - 1  // 0→-1, 1→0 …
+    }
+
+    @objc private func hudSizeSegChanged() {
+        (NSApp.delegate as? AppDelegate)?.hudController?.hudSizePreset = hudSizeSeg.selectedSegment
+    }
+
+    @objc private func hudTextSegChanged() {
+        (NSApp.delegate as? AppDelegate)?.hudController?.hudTextStyle = hudTextSeg.selectedSegment
     }
 
     @objc private func openGitHub() {
