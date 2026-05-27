@@ -26,6 +26,11 @@ class InputMethodManager: NSObject {
     private var pendingSwitchTarget: Bool? = nil
     private var pendingSwitchDeadline: Date = .distantPast
 
+    // 防止旧 re-read 在新切换后仍然清除 pendingSwitchTarget：
+    // 每次 selectInputSource 调用递增计数，re-read 闭包只在代数匹配时才清除 pending。
+    private var switchGeneration: Int = 0
+    private var reReadItem: DispatchWorkItem?
+
     // ── 当前应用信息 ──
     var currentAppBundleIdentifier: String?
     var currentAppName: String?
@@ -212,7 +217,10 @@ class InputMethodManager: NSObject {
 
     private func switchTo(chinese: Bool) {
         refreshCachedInputSource()
-        adoptPendingTargetIfActive()
+        // 注意：这里不调用 adoptPendingTargetIfActive()。
+        // switchTo 由 applyStrategy（应用规则）调用，应始终以真实 TIS 状态为基准，
+        // 而不以"我们期望的目标"为基准；否则 pendingSwitchTarget 可能让 guard
+        // 错误地 bail-out，导致规则下的应用中 CapsLock 切换失效。
         guard cachedIsChinese != chinese else { return }
         switchViaTIS(chinese: chinese)
     }
@@ -336,10 +344,35 @@ class InputMethodManager: NSObject {
             // 150ms 窗口：告知通知处理器"TIS 在此期间报告旧值属正常，应忽略"
             pendingSwitchTarget = chinese
             pendingSwitchDeadline = Date(timeIntervalSinceNow: 0.15)
+            // 递增代数并调度 re-read；旧 re-read 被取消，防止它清除本次的 pending
+            switchGeneration += 1
+            scheduleReRead(forGeneration: switchGeneration)
             deliverInputMethodChanged(chinese)
             NSLog("[TailInput] switched to %@", chinese ? "Chinese" : "English")
         }
         return result
+    }
+
+    /// 80ms 后确认 TIS 已落地，并清除 pendingSwitchTarget。
+    /// generation 守卫确保只有最新一次 selectInputSource 的 re-read 能清除 pending，
+    /// 旧通知触发的 re-read（代数已过期）直接退出，不干扰新切换的状态。
+    private func scheduleReRead(forGeneration gen: Int) {
+        reReadItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            guard self.switchGeneration == gen else { return }
+            let prev = self.cachedIsChinese
+            self.refreshCachedInputSource()
+            let settled = self.cachedIsChinese
+            // TIS 已落地：清除 pending，不再用乐观值覆盖后续通知
+            self.pendingSwitchTarget = nil
+            if settled != prev {
+                self.onInputStateRefreshed?(settled)
+                self.deliverInputMethodChanged(settled)
+            }
+        }
+        reReadItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: item)
     }
 
     private func clearCachedTargetID(chinese: Bool) {
@@ -429,35 +462,30 @@ class InputMethodManager: NSObject {
 
         // 若在 pendingSwitchTarget 窗口内 TIS 报告的是旧值，用目标值替代以避免闪烁。
         // 这发生在 TISSelectInputSource 异步生效期间：通知先到，但状态尚未稳定。
+        let now = Date()
         let effectiveState: Bool
-        if let target = pendingSwitchTarget,
-           Date() < pendingSwitchDeadline,
-           cachedIsChinese != target {
-            // TIS 尚未稳定：继续使用乐观目标值，并对齐缓存防止延迟补读产生假"变化"
-            effectiveState = target
-            cachedIsChinese = target
+        if let target = pendingSwitchTarget, now < pendingSwitchDeadline {
+            if cachedIsChinese != target {
+                // TIS 尚未稳定：继续使用乐观目标值
+                effectiveState = target
+                cachedIsChinese = target
+            } else {
+                // TIS 已与目标对齐，但不在此清除 pending —— 等 scheduleReRead 的 re-read 来清除。
+                // 这里清除会产生 Bug B：双重通知里第二条通知使 TIS 正好匹配 target，
+                // 从而提前清除 pending，导致后续通知里的旧值无法被正确覆盖。
+                effectiveState = cachedIsChinese
+            }
         } else {
+            // 窗口已过期或没有 pending：清除过期的 pending（正常情况 re-read 早已清除）
             pendingSwitchTarget = nil
             effectiveState = cachedIsChinese
         }
 
         onInputStateRefreshed?(effectiveState)
         deliverInputMethodChanged(effectiveState)
-
-        // 延迟补读：捕获 TIS 通知早到但状态确实需要时间落地的情况
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-            guard let self = self else { return }
-            let prev = self.cachedIsChinese
-            self.refreshCachedInputSource()
-            let settled = self.cachedIsChinese
-            if settled == self.pendingSwitchTarget {
-                self.pendingSwitchTarget = nil
-            }
-            if settled != prev {
-                self.onInputStateRefreshed?(settled)
-                self.deliverInputMethodChanged(settled)
-            }
-        }
+        // 注意：不在此调度 asyncAfter re-read。
+        // re-read 由 selectInputSource → scheduleReRead 统一管理，
+        // 代数守卫保证只有最新切换的 re-read 才能清除 pending。
     }
 
     private func deliverInputMethodChanged(_ isChinese: Bool) {
