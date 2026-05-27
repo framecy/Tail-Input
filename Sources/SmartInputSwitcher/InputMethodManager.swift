@@ -212,13 +212,24 @@ class InputMethodManager: NSObject {
 
     private func switchTo(chinese: Bool) {
         refreshCachedInputSource()
+        adoptPendingTargetIfActive()
         guard cachedIsChinese != chinese else { return }
         switchViaTIS(chinese: chinese)
     }
 
     func toggleInputMethod() {
         refreshCachedInputSource()
+        adoptPendingTargetIfActive()
         switchViaTIS(chinese: !cachedIsChinese)
+    }
+
+    /// 紧接的上次切换尚未在 TIS 中落地时，TISCopyCurrentKeyboardInputSource 仍返回旧值。
+    /// 连按 CapsLock 时若以旧值做"取反"，第二次会反向回到第一次的目标，使两次按键合并为
+    /// 单次切换，并造成 HUD 显示与实际输入状态长期不一致。改以目标值为基准即可正确交替。
+    private func adoptPendingTargetIfActive() {
+        if let target = pendingSwitchTarget, Date() < pendingSwitchDeadline {
+            cachedIsChinese = target
+        }
     }
 
     // MARK: - TIS 切换（每次获取新鲜列表，避免缓存 TISInputSource 指针悬空）
