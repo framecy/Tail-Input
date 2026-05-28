@@ -7,7 +7,7 @@
           {
             "type": "command",
             "if": "Bash(git push *)",
-            "command": "PLIST=\"Sources/SmartInputSwitcher/Info.plist\"; [ -f \"$PLIST\" ] || exit 0; LAST_MSG=$(git log -1 --pretty=%s 2>/dev/null); case \"$LAST_MSG\" in 'chore: bump build to '*) exit 0;; esac; CUR=$(awk '/<key>CFBundleVersion<\\/key>/{getline; gsub(/.*<string>|<\\/string>.*/,\"\"); print; exit}' \"$PLIST\"); case \"$CUR\" in ''|*[!0-9]*) exit 0;; esac; NEW=$((CUR + 1)); awk -v new=\"$NEW\" 'prev==1{sub(/<string>[0-9]+<\\/string>/,\"<string>\" new \"</string>\"); prev=0} /<key>CFBundleVersion<\\/key>/{prev=1} {print}' \"$PLIST\" > \"$PLIST.tmp\" && mv \"$PLIST.tmp\" \"$PLIST\"; git add \"$PLIST\" && git diff --cached --quiet \"$PLIST\" || git commit -q -m \"chore: bump build to $NEW\"; exit 0"
+            "command": "PLIST=\"Sources/TailInput/Info.plist\"; [ -f \"$PLIST\" ] || exit 0; LAST_MSG=$(git log -1 --pretty=%s 2>/dev/null); case \"$LAST_MSG\" in 'chore: bump build to '*) exit 0;; esac; CUR=$(awk '/<key>CFBundleVersion<\\/key>/{getline; gsub(/.*<string>|<\\/string>.*/,\"\"); print; exit}' \"$PLIST\"); case \"$CUR\" in ''|*[!0-9]*) exit 0;; esac; NEW=$((CUR + 1)); awk -v new=\"$NEW\" 'prev==1{sub(/<string>[0-9]+<\\/string>/,\"<string>\" new \"</string>\"); prev=0} /<key>CFBundleVersion<\\/key>/{prev=1} {print}' \"$PLIST\" > \"$PLIST.tmp\" && mv \"$PLIST.tmp\" \"$PLIST\"; git add \"$PLIST\" && git diff --cached --quiet \"$PLIST\" || git commit -q -m \"chore: bump build to $NEW\"; exit 0"
           }
         ]
       }

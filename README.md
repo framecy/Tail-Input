@@ -15,7 +15,7 @@
 | **三种规则** | 切换为英文 / 切换为中文 / 保持不变，按应用独立配置 |
 | **窗口 + 菜单栏双模式** | 有 Dock 图标，可 Cmd+Tab 切换；菜单栏图标快速查看状态 |
 | **CapsLock 三态切换** | 关闭 / 兼容（短按切换）/ 纯切换（零延迟 + 禁用大写锁定），按需选择 |
-| **HUD 提示** | 切换时屏幕右上角短暂显示当前输入法（简体中文 / English） |
+| **HUD 提示** | 切换时屏幕角落短暂显示当前输入法，位置 / 大小 / 内容均可自定义 |
 | **开机自启动** | 一键注册 / 取消 Launch at Login |
 
 ---
@@ -83,23 +83,31 @@ open ~/Library/Developer/Xcode/DerivedData/Tail_Input*/Build/Products/Release/Ta
 |---|---|
 | 操作系统 | macOS 13.0 Ventura 及以上 |
 | 硬件 | Apple Silicon（M 系列）及 Intel |
-| 权限 | 无需辅助功能权限（CapsLock 兼容模式除外） |
+| 权限 | 无需辅助功能权限（CapsLock 兼容/纯切换模式除外） |
 
 ---
 
 ## 技术架构
 
 ```
-main.swift                 → 应用入口
-AppDelegate.swift          → Dock + 菜单栏 UI，NSMenuDelegate 懒构建，权限重试逻辑
-AppObserver.swift          → NSWorkspace 应用激活监听（去重 + 8ms 合并）
-InputMethodManager.swift   → TIS 输入法切换（乐观缓存 + modeID 检测）
-ConfiguredAppStore.swift   → 应用策略持久化（Codable + 旧格式迁移）
-CapsLockInterceptor.swift  → CGEvent tap 拦截 CapsLock（短按 < 300ms 直接切换）
-AccessibilityManager.swift → 辅助功能权限轮询（1s 快速 / 5s 节能双档）
-MainWindowController.swift → 双栏设置窗口（左侧边栏 + 右侧规则区）
-HUDWindowController.swift  → 切换 HUD 弹窗（LiquidGlass 风格，178×66）
-WelcomeWindowController.swift → 首次运行引导
+Sources/TailInput/
+├── main.swift                 → 应用入口
+├── AppDelegate.swift          → Dock + 菜单栏 UI，NSMenuDelegate 懒构建，权限重试逻辑
+├── AppObserver.swift          → NSWorkspace 应用激活监听（去重 + 8ms 合并）
+├── InputMethodManager.swift   → TIS 输入法切换（乐观缓存 + 代数守卫 + modeID 检测）
+├── ConfiguredAppStore.swift   → 应用策略持久化（Codable + 旧格式迁移）
+├── CapsLockInterceptor.swift  → CGEvent tap 拦截 CapsLock（三态：关闭/兼容/纯切换）
+├── AccessibilityManager.swift → 辅助功能权限轮询（1s 快速 / 5s 节能双档）
+├── MainWindowController.swift → 双栏设置窗口（左侧边栏 + 右侧规则区）
+├── HUDWindowController.swift  → 切换 HUD 弹窗（位置/大小/内容可配置）
+└── WelcomeWindowController.swift → 首次运行引导
+
+Tests/TailInputTests/
+├── AppInputStrategyTests.swift
+├── ConfiguredAppStoreTests.swift
+├── InputMethodIDRecognitionTests.swift
+├── InputMethodManagerIntegrationTests.swift
+└── InputMethodStateDetectionTests.swift
 ```
 
 **核心技术**：TIS (Carbon) · CGEvent tap · NSWorkspace · GCD DispatchWorkItem · ServiceManagement · Codable
@@ -121,9 +129,9 @@ WelcomeWindowController.swift → 首次运行引导
 | 切换为英文 | 扫描并激活 ASCII 输入源 |
 | 切换为中文 | 优先从缓存恢复上次中文输入源 |
 | modeID 检测 | 兼容鼠须管等输入法的 Roman 子模式（macOS 26 修复） |
-| 乐观缓存 | 切换成功后立即写入目标 ID，避免 TIS 异步生效期间读取到旧状态 |
+| 乐观缓存 + 代数守卫 | 切换成功后立即写入目标 ID；代数计数器防止旧 re-read 清除新 pending 状态 |
 
-### CapsLockInterceptor — CapsLock 三态切换（v1.5.0）
+### CapsLockInterceptor — CapsLock 三态切换
 
 通过 `CGEvent.tapCreate` 在会话层拦截 `flagsChanged` 事件，识别 keyCode `0x39`（CapsLock 键），支持三种模式：
 
@@ -131,13 +139,13 @@ WelcomeWindowController.swift → 首次运行引导
 |---|---|
 | 关闭 | 不拦截，事件透传给系统 |
 | 兼容 | 短按（< 300ms）切换输入法；长按保留 macOS 原生大写锁定 |
-| 纯切换 | 仅响应 SET 方向事件（避免抖动）；50ms 去抖；IOKit 钳制 LED 不亮 / 大写锁定不生效 |
+| 纯切换 | 仅响应 SET 方向事件（避免抖动）；100ms 去抖；IOKit 钳制 LED 不亮 / 大写锁定不生效 |
 
 - 纯切换模式通过 IOHIDSystem 将 `kIOHIDCapsLockState` 强制清零，实现零 LED 反馈
 - 首次启用纯切换模式弹窗检测 macOS「⇪ 切换 ABC」冲突，提供一键跳转系统设置
 - tap 创建成功即代表 AX 权限有效，绕过 `AXIsProcessTrusted()` 进程内缓存问题
 
-### AccessibilityManager — 权限状态监控（v1.4.0）
+### AccessibilityManager — 权限状态监控
 
 后台轮询 `AXIsProcessTrusted()`，监控辅助功能授权状态变化：
 
@@ -151,11 +159,15 @@ WelcomeWindowController.swift → 首次运行引导
 
 ### MainWindowController — 双栏设置界面
 
-720×480 无标题栏窗口，左侧边栏包含总开关、全局默认策略、开机自启、版本信息；右侧规则区支持搜索过滤，可从所有已安装应用（含未运行）中搜索并配置策略。
+无标题栏窗口，左侧边栏包含总开关、全局默认策略、CapsLock 模式选择、HUD 配置、开机自启、版本信息；右侧规则区支持搜索过滤，可从所有已安装应用（含未运行）中搜索并配置策略。
 
 ### HUDWindowController — 切换反馈弹窗
 
-无边框悬浮窗口（178×66），常驻 `.floating` 层，切换输入法后短暂显示当前状态（简体中文 / English），0.8s 后淡出。LiquidGlass 风格：18pt 连续圆角 + 顶部反光高亮。
+无边框悬浮窗口，常驻 `.floating` 层，切换输入法后短暂显示当前状态（简体中文 / English）。支持：
+- **9 种位置**（四角 / 四边中点 / 屏幕中央 / 鼠标附近）
+- **3 种尺寸**（小 / 中 / 大）
+- **图标显示开关**
+- **文字样式**（简短：中文/英文 · 完整：简体中文/English）
 
 ---
 
@@ -164,60 +176,33 @@ WelcomeWindowController.swift → 首次运行引导
 ### v1.5.0
 - 新增：CapsLock 三态切换 — 关闭 / 兼容（短按切换 + 长按保留大写锁定）/ 纯切换（按下即切换 + IOKit 钳制 LED 不亮 + 完全禁用大写锁定），替代原单一兼容开关
 - 新增：纯切换模式冲突检测 — 首次启用时弹窗提示 macOS「⇪ 切换 ABC」设置冲突，提供「打开系统设置」一键跳转
-- 新增：应用选择器 Spotlight 搜索 — 通过 `mdfind` 发现全部已安装 App，覆盖无 Info.plist 应用（如部分游戏客户端）
+- 新增：HUD 位置 / 大小 / 内容全面可配置 — 9 种显示位置，3 种尺寸预设，图标开关，简短/完整文字样式
+- 新增：应用选择器 Spotlight 搜索 — 通过 `mdfind` 发现全部已安装 App，覆盖无 Info.plist 应用
 - 新增：应用选择器手动选择 — 顶栏「手动选择…」按钮，通过 NSOpenPanel 直接选取任意 .app 文件
-- 新增：无 Bundle ID 应用支持 — AppObserver 与 AppPicker 均支持以 `path:<绝对路径>` 作为合成标识符，正确应用策略
-- 修复：设置窗口所有键盘快捷键失效（Cmd+W/A/C/V/X/Z 等）— 将激活策略由 `.accessory` 改为 `.regular` 并注入标准菜单栏
-- 修复：UserDefaults 迁移 — 旧版 Bool `UseCapsLockSimulation` 自动迁移至新三态 `CapsLockMode` Int 键，升级无感
+- 新增：无 Bundle ID 应用支持 — `path:<绝对路径>` 作为合成标识符，正确应用策略
+- 修复：设置窗口所有键盘快捷键失效（Cmd+W/A/C/V/X/Z 等）
+- 修复：设置了输入法规则的应用中，纯切换模式单击/连按均无法切换（代数守卫 + pending 清除逻辑重构）
+- 修复：UserDefaults 旧版 Bool 键自动迁移至新三态 Int 键
+- 重命名：源码目录由 `Sources/SmartInputSwitcher` → `Sources/TailInput`
 
 ### v1.4.0
 - 新增：CapsLock 拦截器（CGEvent tap）— 短按 CapsLock（< 300ms）直接切换输入法，零系统延迟
 - 新增：AccessibilityManager 辅助功能权限后台轮询 — 授权后 ≤ 1s 自动恢复拦截器，无需手动重启
-- 重构：权限授权流程 — 以 tap 创建结果替代 `AXIsProcessTrusted()` 缓存判断，彻底解决授权后仍返回 false 的问题
-- 修复：重启机制改用 `createsNewApplicationInstance = true`，确保新进程真正启动而非激活旧实例
-- 修复：代码签名 Bundle Identifier 从 linker-signed 残留 `"Tail Input"` 修正为 `com.framed.TailInput`，消除 TCC 授权条目因 cdhash 变化失效的问题
+- 重构：权限授权流程 — 以 tap 创建结果替代 `AXIsProcessTrusted()` 缓存判断
+- 修复：重启机制改用 `createsNewApplicationInstance = true`
+- 修复：Bundle Identifier 从 linker-signed 残留修正为 `com.framed.TailInput`
 
 ### v1.3.1
-- 重构：设置窗口改为双栏布局 — 左侧边栏（开关 / 全局默认 / 关于）+ 右侧内容区，所有界面无弹窗
-- 新增：点击状态栏图标直接唤起主窗口；右键点击仍弹出快捷菜单
-- 优化：左侧底部展示 App 图标、版本号、MIT 协议与 GitHub 入口，一目了然
+- 重构：设置窗口改为双栏布局 — 左侧边栏 + 右侧内容区
+- 新增：点击状态栏图标直接唤起主窗口；右键仍弹出快捷菜单
 
 ### v1.3.0
-- 新增：应用规则选择器 — 可从所有已安装应用中搜索并配置策略，支持按名称和 Bundle ID 过滤
-- 新增：窗口应用模式 — 有 Dock 图标和 Cmd+Tab 支持；点击 Dock 图标重新打开设置窗口
-- 新增：启动时自动打开设置窗口（Onboarding 完成后）
-- 设计：全面采用 LiquidGlass 设计语言 — 毛玻璃背景、18pt 连续圆角、精细分隔线
-- 设计：规则设置窗口重设计 — 应用图标 / 名称 / Bundle ID 三层信息，简洁策略选择
-- 设计：HUD 升级 — 连续圆角 18pt、顶部反光高亮、尺寸 178×66
-- 设计：菜单策略选项改用系统原生 checkmark 状态与 SF Symbol 图标
-- 优化：规则添加流程 — 策略选择内嵌于 Sheet，一步完成
-- 修复：macOS 26 in-source 模式检测（鼠须管等输入法的 Roman 子模式识别）
-- 修复：CapsLock 切换验证延迟 120ms → 80ms
+- 新增：应用规则选择器、窗口应用模式、LiquidGlass 设计语言、HUD 升级
+- 修复：macOS 26 in-source 模式检测（鼠须管 Roman 子模式）
 - 更名：项目正式更名为 Tail Input
 
-### v1.2.3
-- 修复：补全 Apple 简体拼音等中文输入源识别，解决 CapsLock 手动切回中文偶发需要多次点击的问题
-- 优化：CapsLock 兼容模式增加快速校验、一次重试与 TIS 兜底
-- 优化：缓存最近成功的中英文输入源 ID，减少重复扫描
-- 优化：App 切换事件合并窗口 20ms → 8ms
-
-### v1.2.2
-- 优化：AppObserver debounce 50ms → 20ms
-- 优化：TIS 通知触发后 UI 即时同步
-- 优化：状态栏固定宽 28pt，中英图标切换宽度不跳变
-
-### v1.2.1
-- 修复：TIS 切换后乐观缓存更新，解决输入法切换严重失效问题
-- 修复：`InputMethodManager` / `AppObserver` 继承 `NSObject`
-
-### v1.2.0
-- 新增：应用策略管理窗口
-- 新增：ConfiguredAppStore 数据持久化与旧配置自动迁移
-- 新增：状态栏 SF Symbol 图标
-
-### v1.1.0
-- 新增：CapsLock 兼容模式
-- 新增：首次运行 Onboarding
+### v1.2.x
+- 各项性能优化、输入源识别补全、乐观缓存修复
 
 ### v1.0.0
 - 初始发布

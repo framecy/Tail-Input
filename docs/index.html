@@ -190,7 +190,7 @@
                 <div class="fc fc-rose">
                     <span class="fc-pill fc-pill-rose">🔔</span>
                     <h3 class="fc-title">HUD 实时提示</h3>
-                    <p class="fc-desc">切换时屏幕右上角短暂显示当前输入法（简体中文 / English），操作反馈清晰直观。</p>
+                    <p class="fc-desc">切换时屏幕上短暂显示当前输入法。支持 9 种显示位置、3 种尺寸、图标开关，以及简短/完整文字样式，随心定制。</p>
                 </div>
 
                 <!-- CapsLock — 3 cols, slim horizontal -->
@@ -238,6 +238,10 @@
                 <div class="tech-item">
                     <span class="tech-label">标准菜单栏注入</span>
                     <p>以 .regular 激活策略运行，AppDelegate 动态注入 App / Edit / Window 菜单，确保 Cmd+W/A/C/V/Z 等系统快捷键在设置窗口内正常工作。</p>
+                </div>
+                <div class="tech-item">
+                    <span class="tech-label">代数守卫 re-read</span>
+                    <p>switchGeneration 计数器确保只有最新一次 TIS 切换的延迟补读能清除 pendingSwitchTarget，彻底解决设置了应用规则后纯切换模式失效的问题。</p>
                 </div>
             </div>
         </section>
