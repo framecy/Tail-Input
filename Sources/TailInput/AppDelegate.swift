@@ -18,15 +18,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 固定 28pt：比 squareLength(22pt) 多给 6pt breathing room，
-        // 让 character.textbox 与 keyboard 两个图标视觉重量对等，切换时宽度不跳变
-        statusItem = NSStatusBar.system.statusItem(withLength: 28)
+        // 装配主菜单 — Cmd+W / Cmd+A / Cmd+C / Cmd+V / Cmd+Q 等系统快捷键的来源
+        setupMainMenu()
+
+        // 固定 26pt：纯文字徽章"中"/"En"，切换时宽度不跳变
+        statusItem = NSStatusBar.system.statusItem(withLength: 26)
 
         updateStatusBarButton()
 
         hudController = HUDWindowController()
 
-        // 监听输入法状态变更（更新状态栏图标与弹窗）
+        // onInputStateRefreshed：TIS 通知无条件触发，仅更新状态栏图标（无 HUD 去重干扰）
+        InputMethodManager.shared.onInputStateRefreshed = { [weak self] _ in
+            self?.updateStatusBarButton()
+        }
+        // onInputMethodChanged：带去重，App 自身发起的切换走此路径，同时刷新状态栏和 HUD
         InputMethodManager.shared.onInputMethodChanged = { [weak self] isChinese in
             self?.updateStatusBarButton()
             self?.hudController?.showHUD(isChinese: isChinese)
@@ -52,15 +58,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppObserver.shared.start()
 
-        // 启动时如果用户之前已开启 CapsLock 拦截，直接尝试 start —— tap 创建成功即代表权限有效
-        if InputMethodManager.shared.useCapsLockIntercept {
+        // 启动时如果用户之前已开启 CapsLock 拦截，恢复模式后尝试 start —— tap 创建成功即代表权限有效
+        let savedMode = InputMethodManager.shared.capsLockMode
+        if savedMode != .off {
+            CapsLockInterceptor.shared.mode = savedMode
             CapsLockInterceptor.shared.start()
         }
 
-        // 重启后自动开启：用户点击"立即重启"后由新进程在此处接管
+        // 重启后自动开启：用户点击"立即重启"后由新进程在此处接管，使用保存的模式
         if UserDefaults.standard.bool(forKey: "PendingCapsLockEnableOnLaunch") {
             UserDefaults.standard.removeObject(forKey: "PendingCapsLockEnableOnLaunch")
-            if InputMethodManager.shared.tryEnableCapsLockIntercept() {
+            let targetMode: CapsLockMode = savedMode == .off ? .compat : savedMode
+            if InputMethodManager.shared.tryEnableCapsLockMode(targetMode) {
                 // 重启后权限生效，刷新 UI（主窗口可能尚未创建，延迟执行）
                 DispatchQueue.main.async {
                     MainWindowController.shared.refreshSidebar()
@@ -100,34 +109,103 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - 状态栏按钮更新（仅图标，随系统深色/浅色自动适配）
+    // MARK: - 主菜单
+
+    /// 构建标准 macOS 主菜单。
+    /// 为什么需要：.regular 应用如果不设置 NSApp.mainMenu，
+    /// 系统快捷键（Cmd+W/A/C/V/X/Z/Q 等）不会派发到 first responder。
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        // App 菜单（标题不显示，但内容会成为应用名所在的首个菜单）
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "关于 Tail Input",
+                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                        keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "隐藏 Tail Input",
+                        action: #selector(NSApplication.hide(_:)),
+                        keyEquivalent: "h")
+        let hideOthers = NSMenuItem(title: "隐藏其他",
+                                    action: #selector(NSApplication.hideOtherApplications(_:)),
+                                    keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(withTitle: "显示全部",
+                        action: #selector(NSApplication.unhideAllApplications(_:)),
+                        keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "退出 Tail Input",
+                        action: #selector(NSApplication.terminate(_:)),
+                        keyEquivalent: "q")
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // 编辑菜单 — 系统通过 first responder 派发到 NSTextField / NSTableView
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = NSMenuItem(title: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redo)
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        // 窗口菜单 — Cmd+W 关闭、Cmd+M 最小化
+        let windowMenuItem = NSMenuItem()
+        let windowMenu = NSMenu(title: "窗口")
+        windowMenu.addItem(withTitle: "最小化",
+                           action: #selector(NSWindow.performMiniaturize(_:)),
+                           keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "关闭",
+                           action: #selector(NSWindow.performClose(_:)),
+                           keyEquivalent: "w")
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    // MARK: - 状态栏按钮更新
 
     func updateStatusBarButton() {
         guard let button = statusItem.button else { return }
         let isChinese = InputMethodManager.shared.cachedIsChinese
-
-        // 中文：character.textbox（笔画感）  英文：keyboard（直观）
-        let symbolName = isChinese ? "character.textbox" : "keyboard"
-
-        // 13pt medium weight 在 28pt 宽度内与系统原生图标视觉对齐
-        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-            .applying(NSImage.SymbolConfiguration(hierarchicalColor: .labelColor))
-
-        if let icon = NSImage(systemSymbolName: symbolName, accessibilityDescription: isChinese ? "中文" : "英文")?
-                .withSymbolConfiguration(config) {
-            icon.isTemplate = true   // 模板图像：系统自动处理深/浅色及高亮状态
-            button.image = icon
-            button.imagePosition = .imageOnly
-            button.imageScaling = .scaleProportionallyDown
-        } else {
-            // 兜底：等宽字符
-            button.image = nil
-            button.title = isChinese ? "中" : "En"
-            button.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        }
-
+        button.image = makeStatusBadge(isChinese: isChinese)
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
         button.title = ""
         button.attributedTitle = NSAttributedString()
+    }
+
+    /// 纯文字 template 徽章：中文 = medium "中"，英文 = light "En"。
+    /// isTemplate=true 让系统处理深/浅色菜单栏及高亮反色，低调无侵入感。
+    private func makeStatusBadge(isChinese: Bool) -> NSImage {
+        let imgW: CGFloat = 24
+        let imgH: CGFloat = 20
+        let image = NSImage(size: NSSize(width: imgW, height: imgH), flipped: false) { _ in
+            let label    = isChinese ? "中" : "En"
+            let fontSize = isChinese ? CGFloat(14) : CGFloat(12)
+            let weight   = isChinese ? NSFont.Weight.medium : NSFont.Weight.light
+            let font     = NSFont.systemFont(ofSize: fontSize, weight: weight)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+            ]
+            let str  = NSAttributedString(string: label, attributes: attrs)
+            let sz   = str.size()
+            str.draw(at: NSPoint(x: (imgW - sz.width) / 2, y: (imgH - sz.height) / 2))
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     /// 构建菜单内容（仅在菜单即将显示时调用）
@@ -153,8 +231,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Strategy options — indented, with SF Symbol icons
             let strategies: [(AppInputStrategy, String, String)] = [
                 (.globalDefault, "跟随全局设置", "circle"),
-                (.forceEnglish,  "切换为英文",   "keyboard"),
-                (.forceChinese,  "切换为中文",   "character.textbox"),
+                (.forceEnglish,  "切换为英文",   "e.circle"),
+                (.forceChinese,  "切换为中文",   "globe.asia.australia"),
                 (.keepCurrent,   "保持不变",     "arrow.uturn.backward"),
             ]
             let iconCfg = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
@@ -186,11 +264,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)
 
-        let capsLockItem = NSMenuItem(title: "CapsLock 直接切换",
-                                      action: #selector(toggleCapsLockIntercept(_:)),
-                                      keyEquivalent: "")
-        capsLockItem.state = InputMethodManager.shared.useCapsLockIntercept ? .on : .off
-        capsLockItem.toolTip = "拦截 CapsLock 按键并直接切换输入法，消除系统延迟，需要辅助功能权限"
+        // CapsLock 三态子菜单：关闭 / 兼容 / 纯切换
+        let capsLockItem = NSMenuItem(title: "CapsLock 切换", action: nil, keyEquivalent: "")
+        let capsSub = NSMenu()
+        let currentMode = InputMethodManager.shared.capsLockMode
+        let entries: [(String, CapsLockMode, String)] = [
+            ("关闭",   .off,    "不拦截 CapsLock，走系统原生行为"),
+            ("兼容模式", .compat, "短按 < 300ms 切换输入法，保留 macOS 原生 CapsLock 体验"),
+            ("纯切换模式", .pure,   "按下即切换，零延迟，完全禁用大写锁定（需辅助功能权限）"),
+        ]
+        for (title, mode, tip) in entries {
+            let item = NSMenuItem(title: title, action: #selector(setCapsLockMode(_:)), keyEquivalent: "")
+            item.tag = mode.rawValue
+            item.state = (mode == currentMode) ? .on : .off
+            item.toolTip = tip
+            capsSub.addItem(item)
+        }
+        capsLockItem.submenu = capsSub
         menu.addItem(capsLockItem)
 
         menu.addItem(NSMenuItem.separator())
@@ -221,22 +311,66 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppObserver.shared.isEnabled = isEnabled
     }
 
-    @objc func toggleCapsLockIntercept(_ sender: NSMenuItem) {
+    @objc func setCapsLockMode(_ sender: NSMenuItem) {
+        guard let mode = CapsLockMode(rawValue: sender.tag) else { return }
         let manager = InputMethodManager.shared
-        if manager.useCapsLockIntercept {
-            manager.useCapsLockIntercept = false
+        if mode == .off {
+            manager.capsLockMode = .off
+            MainWindowController.shared.refreshSidebar()
             return
         }
-        // 想开启 — 用 tryEnable 实际尝试 tap 创建，成功才持久化
-        if !manager.tryEnableCapsLockIntercept() {
-            requestAccessibilityForCapsLock()
+        // .pure 模式与 macOS 原生 "用 CapsLock 切换 ABC" 互斥，首次启用前确认
+        if mode == .pure && !confirmPureModeMacOSConflict() {
+            MainWindowController.shared.refreshSidebar()
+            return
+        }
+        if !manager.tryEnableCapsLockMode(mode) {
+            requestAccessibilityForCapsLock(mode: mode)
+        } else {
+            MainWindowController.shared.refreshSidebar()
+        }
+    }
+
+    /// 首次启用 pure 模式时弹窗确认 macOS 原生 CapsLock 切换已关闭。
+    /// 已确认过的（UserDefaults flag 写入）会直接返回 true 不再骚扰。
+    ///
+    /// 返回 true 表示可以继续启用 .pure；false 表示用户取消，调用方应回滚 UI。
+    @discardableResult
+    func confirmPureModeMacOSConflict() -> Bool {
+        let ackKey = "PureModeMacOSCheckAcknowledged"
+        if UserDefaults.standard.bool(forKey: ackKey) { return true }
+
+        let alert = NSAlert()
+        alert.messageText = "纯切换模式需要关闭 macOS 原生 CapsLock 切换"
+        alert.informativeText = """
+        系统设置 → 键盘 → 输入法 → 编辑… 中的「使用 ⇪ 大写锁定键切换 ABC 输入源」必须保持关闭，\
+        否则 macOS 和 Tail Input 会同时切换输入法，互相抵消。
+
+        • 已经关闭了 → 点击「已关闭，启用」继续
+        • 还没关 → 点击「打开系统设置」前往，关闭后再回到本 App 选择纯切换
+        """
+        alert.addButton(withTitle: "已关闭，启用")
+        alert.addButton(withTitle: "打开系统设置")
+        alert.addButton(withTitle: "取消")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            UserDefaults.standard.set(true, forKey: ackKey)
+            return true
+        case .alertSecondButtonReturn:
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
+            return false
+        default:
+            return false
         }
     }
 
     /// 引导用户去系统设置授权辅助功能。
     /// 不再调用 promptForPermission()（避免系统弹窗与本弹窗叠加干扰 TCC 状态）。
     /// CGEvent.tapCreate 失败本身已会让 App 出现在辅助功能列表里，无需额外触发。
-    func requestAccessibilityForCapsLock() {
+    func requestAccessibilityForCapsLock(mode: CapsLockMode = .compat) {
         let alert = NSAlert()
         alert.messageText = "请授权辅助功能"
         alert.informativeText = "CapsLock 直接切换需要 Tail Input 在「系统设置 → 隐私与安全 → 辅助功能」中被授权。\n\n点击「打开系统设置」，在列表中找到 Tail Input 并开启开关，然后切回本 App 即可自动激活。"
@@ -247,23 +381,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 直接打开系统设置，不触发额外系统弹窗
         AccessibilityManager.shared.openAccessibilitySettings()
-        // 标记"用户期望开启"，didBecomeActive 时自动重试
-        pendingCapsLockEnable = true
+        // 标记"用户期望以此模式开启"，didBecomeActive 时自动重试
+        pendingCapsLockMode = mode
     }
 
-    /// 用户期望开启拦截器但当前没权限，等待用户回到 App 时重试
-    private var pendingCapsLockEnable = false
+    /// 用户期望开启拦截器但当前没权限，等待用户回到 App 时重试。
+    /// nil 表示无待处理；非 nil 即重试目标模式。
+    private var pendingCapsLockMode: CapsLockMode?
 
     @objc func handleAppDidBecomeActive() {
-        guard pendingCapsLockEnable else { return }
-        if InputMethodManager.shared.tryEnableCapsLockIntercept() {
+        guard let mode = pendingCapsLockMode else { return }
+        if InputMethodManager.shared.tryEnableCapsLockMode(mode) {
             // 权限已获取，进程内 tap 创建成功
-            pendingCapsLockEnable = false
+            pendingCapsLockMode = nil
             MainWindowController.shared.refreshSidebar()
         } else {
             // 权限已授予但当前进程仍无法创建 tap（macOS 部分版本需重启进程）
             // 标记重启意图，只弹一次
-            pendingCapsLockEnable = false
+            pendingCapsLockMode = nil
             showRestartForCapsLockAlert()
         }
     }

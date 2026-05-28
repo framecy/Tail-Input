@@ -31,7 +31,7 @@
         <!-- 主视觉区 -->
         <main class="hero">
             <div class="hero-content">
-                <div class="badge">v1.4.0 &middot; 开源 &middot; macOS 13+</div>
+                <div class="badge">v1.5.0 &middot; 开源 &middot; macOS 13+</div>
                 <h1 class="hero-title">切换 App<br><span class="text-gradient">输入法跟着走</span></h1>
                 <p class="hero-subtitle">
                     打开 Xcode 自动切英文，回微信自动切中文。<br>
@@ -39,7 +39,7 @@
                 </p>
                 <div class="hero-actions">
                     <a href="https://github.com/framecy/Tail-Input/releases/latest" class="btn btn-primary">
-                        ↓ 下载 v1.4.0
+                        ↓ 下载 v1.5.0
                     </a>
                     <a href="https://github.com/framecy/Tail-Input" class="btn btn-secondary">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -89,7 +89,7 @@
                                 <div class="sf-icon">⌨️</div>
                                 <div class="sf-text">
                                     <div class="sf-name">Tail Input</div>
-                                    <div class="sf-meta">v1.4.0 · MIT</div>
+                                    <div class="sf-meta">v1.5.0 · MIT</div>
                                 </div>
                             </div>
                         </div>
@@ -190,7 +190,7 @@
                 <div class="fc fc-rose">
                     <span class="fc-pill fc-pill-rose">🔔</span>
                     <h3 class="fc-title">HUD 实时提示</h3>
-                    <p class="fc-desc">切换时屏幕右上角短暂显示当前输入法（简体中文 / English），操作反馈清晰直观。</p>
+                    <p class="fc-desc">切换时屏幕上短暂显示当前输入法。支持 9 种显示位置、3 种尺寸、图标开关，以及简短/完整文字样式，随心定制。</p>
                 </div>
 
                 <!-- CapsLock — 3 cols, slim horizontal -->
@@ -198,11 +198,11 @@
                     <div class="fc-horizontal-main">
                         <span class="fc-pill fc-pill-slate">⌨️</span>
                         <div>
-                            <h3 class="fc-title">CapsLock 直接切换</h3>
-                            <p class="fc-desc">通过 CGEvent tap 在系统层拦截 CapsLock 短按（&lt; 300ms），零延迟直接切换输入法；授权后 ≤ 1s 自动生效，无需重启。</p>
+                            <h3 class="fc-title">CapsLock 三态切换</h3>
+                            <p class="fc-desc">关闭 / 兼容（短按切换）/ 纯切换（按下即切换 + IOKit 钳制 LED，完全禁用大写锁定）。纯切换模式与 macOS 原生「⇪ 切换 ABC 输入源」互斥，启用前 App 会弹窗引导。</p>
                         </div>
                     </div>
-                    <span class="fc-note-pill">需要辅助功能权限（仅此功能）</span>
+                    <span class="fc-note-pill">非"关闭"模式需要辅助功能权限</span>
                 </div>
             </div>
         </section>
@@ -231,6 +231,18 @@
                     <span class="tech-label">懒构建菜单</span>
                     <p>NSMenuDelegate 实现菜单内容仅在点击时渲染，消除每次 App 切换时的 UI 主线程压力。</p>
                 </div>
+                <div class="tech-item">
+                    <span class="tech-label">全量应用发现</span>
+                    <p>mdfind Spotlight 扫描 + 递归深度遍历双通道，以 path: 合成 Bundle ID 支持无 Info.plist 应用（游戏客户端等）；NSOpenPanel 兜底手动选取任意 .app。</p>
+                </div>
+                <div class="tech-item">
+                    <span class="tech-label">标准菜单栏注入</span>
+                    <p>以 .regular 激活策略运行，AppDelegate 动态注入 App / Edit / Window 菜单，确保 Cmd+W/A/C/V/Z 等系统快捷键在设置窗口内正常工作。</p>
+                </div>
+                <div class="tech-item">
+                    <span class="tech-label">代数守卫 re-read</span>
+                    <p>switchGeneration 计数器确保只有最新一次 TIS 切换的延迟补读能清除 pendingSwitchTarget，彻底解决设置了应用规则后纯切换模式失效的问题。</p>
+                </div>
             </div>
         </section>
 
@@ -240,7 +252,7 @@
             <div class="install-steps glass-card">
                 <div class="install-step">
                     <span class="step-num">1</span>
-                    <p>下载 <a href="https://github.com/framecy/Tail-Input/releases/latest"><code>Tail-Input-1.4.0.dmg</code></a>，打开后将 App 拖入 <strong>Applications</strong></p>
+                    <p>下载 <a href="https://github.com/framecy/Tail-Input/releases/latest"><code>Tail-Input-1.5.0.dmg</code></a>，打开后将 App 拖入 <strong>Applications</strong></p>
                 </div>
                 <div class="install-step">
                     <span class="step-num">2</span>

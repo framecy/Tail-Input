@@ -20,41 +20,84 @@ class InputMethodManager: NSObject {
 
     private var lastDeliveredInputState: Bool?
 
+    // 拦截 TIS 通知里的过渡"幽灵"读数：
+    // TISSelectInputSource 异步生效，通知在状态稳定前就到达，首次 re-read 会拿到旧值。
+    // 记录"我们期望的目标"，在 150ms 窗口内若 TIS 报告值与目标不符，直接用目标值覆盖。
+    private var pendingSwitchTarget: Bool? = nil
+    private var pendingSwitchDeadline: Date = .distantPast
+
+    // 防止旧 re-read 在新切换后仍然清除 pendingSwitchTarget：
+    // 每次 selectInputSource 调用递增计数，re-read 闭包只在代数匹配时才清除 pending。
+    private var switchGeneration: Int = 0
+    private var reReadItem: DispatchWorkItem?
+
     // ── 当前应用信息 ──
     var currentAppBundleIdentifier: String?
     var currentAppName: String?
 
     // ── 回调 ──
-    var onInputMethodChanged: ((Bool) -> Void)?
+    var onInputMethodChanged: ((Bool) -> Void)?  // HUD 触发（带去重）
+    var onInputStateRefreshed: ((Bool) -> Void)? // 状态栏刷新（无去重，TIS 通知即触发）
     var onAppChanged: (() -> Void)?
 
     // ── CapsLock 拦截模式 ──
     // UserDefaults 持久化的是"用户的意图"。实际 tap 是否运行由 CapsLockInterceptor.isRunning 决定。
-    // 两者可能短暂不一致：用户开启意图后等待 AX 授权期间 → 意图 true，isRunning false。
+    // 两者可能短暂不一致：用户开启意图后等待 AX 授权期间 → 意图 .compat/.pure，isRunning false。
     // AppDelegate 监听 NSApplication.didBecomeActive，在用户从系统设置回到 App 时重试 start()。
-    private static let kUseCapsLockInterceptKey = "UseCapsLockSimulation"
-    var useCapsLockIntercept: Bool {
-        get { UserDefaults.standard.bool(forKey: Self.kUseCapsLockInterceptKey) }
+    private static let kCapsLockModeKey         = "CapsLockMode"
+    private static let kUseCapsLockInterceptKey = "UseCapsLockSimulation" // legacy v1.4.0 之前
+
+    /// 用户期望的 CapsLock 拦截模式。读取时若新键缺失，自动从旧 Bool 键迁移。
+    var capsLockMode: CapsLockMode {
+        get {
+            if UserDefaults.standard.object(forKey: Self.kCapsLockModeKey) == nil {
+                // 迁移：旧版 Bool 为 true 视为 .compat（保留原 300ms 短按行为）
+                return UserDefaults.standard.bool(forKey: Self.kUseCapsLockInterceptKey) ? .compat : .off
+            }
+            let raw = UserDefaults.standard.integer(forKey: Self.kCapsLockModeKey)
+            return CapsLockMode(rawValue: raw) ?? .off
+        }
         set {
-            UserDefaults.standard.set(newValue, forKey: Self.kUseCapsLockInterceptKey)
-            if newValue {
-                CapsLockInterceptor.shared.start()
-            } else {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Self.kCapsLockModeKey)
+            // 同步 legacy key，便于回滚到旧版本时设置不丢失
+            UserDefaults.standard.set(newValue != .off, forKey: Self.kUseCapsLockInterceptKey)
+            CapsLockInterceptor.shared.mode = newValue
+            if newValue == .off {
                 CapsLockInterceptor.shared.stop()
+            } else {
+                CapsLockInterceptor.shared.start()
             }
         }
     }
 
-    /// UI 调用：尝试开启拦截器。返回 false 表示需要权限，调用方应触发授权流程。
-    /// 与直接 `useCapsLockIntercept = true` 的区别：仅在实际成功时才持久化意图，
-    /// 避免"开关 on 但拦截器没跑"的不一致状态。
+    /// 向后兼容：true ↔ 拦截器以某种模式运行；false ↔ .off。
+    /// 默认开启路径走 .compat，保持与 v1.4.0 之前一致的体验。
+    var useCapsLockIntercept: Bool {
+        get { capsLockMode != .off }
+        set { capsLockMode = newValue ? .compat : .off }
+    }
+
+    /// UI 调用：尝试以指定模式开启拦截器。返回 false 表示需要权限，调用方应触发授权流程。
+    /// 仅在 tap 实际创建成功时才持久化意图，避免"开关 on 但拦截器没跑"的不一致状态。
     @discardableResult
-    func tryEnableCapsLockIntercept() -> Bool {
+    func tryEnableCapsLockMode(_ mode: CapsLockMode) -> Bool {
+        if mode == .off {
+            capsLockMode = .off
+            return true
+        }
+        CapsLockInterceptor.shared.mode = mode
         if CapsLockInterceptor.shared.start() {
+            UserDefaults.standard.set(mode.rawValue, forKey: Self.kCapsLockModeKey)
             UserDefaults.standard.set(true, forKey: Self.kUseCapsLockInterceptKey)
             return true
         }
         return false
+    }
+
+    /// 向后兼容入口，等价于 tryEnableCapsLockMode(.compat)。
+    @discardableResult
+    func tryEnableCapsLockIntercept() -> Bool {
+        return tryEnableCapsLockMode(.compat)
     }
 
     override init() {
@@ -89,6 +132,24 @@ class InputMethodManager: NSObject {
         "pinyin", "chinese", "wubi", "shuangpin", "cangjie", "zhuyin",
     ]
 
+    // kTISTypeKeyboardInputMode 子节点：直接 select 可保证进入正确子模式，
+    // 而非仅激活父级 source（父级会恢复上次离开时的子模式，可能是英文 submode）。
+    // 大写字母保留原始 Apple ID 大小写（TIS 区分）。
+    private static let chineseInputModeIDs: Set<String> = [
+        "com.apple.inputmethod.SCIM.ITABC",
+        "com.apple.inputmethod.SCIM.Shuangpin",
+        "com.apple.inputmethod.SCIM.Wubi",
+        "com.apple.inputmethod.TCIM.Pinyin",
+        "com.apple.inputmethod.TCIM.Cangjie",
+        "com.apple.inputmethod.TCIM.Zhuyin",
+    ]
+
+    // Pinyin 等输入法的英文 in-source 子模式 ID（不含 "roman"，需独立识别）
+    private static let englishSubmodeIDs: Set<String> = [
+        "com.apple.inputmethod.SCIM.ABC",
+        "com.apple.inputmethod.TCIM.Roman",
+    ]
+
     static func isChineseID(_ lowerId: String) -> Bool {
         if appleChineseInputSourceIDs.contains(lowerId) {
             return true
@@ -107,12 +168,16 @@ class InputMethodManager: NSObject {
     // MARK: - 纯函数：输入法状态判断（internal 以支持单元测试）
 
     /// 根据 TIS source ID 和 mode ID 判断最终的中英文状态。
-    /// modeID 含 "roman" 时，即使 sourceID 被识别为中文，也判定为英文（in-source 英文模式）。
+    /// Apple Pinyin 英文子模式 modeID 为 "com.apple.inputmethod.SCIM.ABC"，不含 "roman"，
+    /// 需通过 englishSubmodeIDs 集合和 ".abc" 后缀额外识别，否则会误报为中文。
     static func detectInputMethodState(sourceID: String, modeID: String?) -> Bool {
         let lower = sourceID.lowercased()
         var isChinese = isChineseID(lower)
-        if isChinese, let mode = modeID, mode.lowercased().contains("roman") {
-            isChinese = false
+        if isChinese, let mode = modeID {
+            let mLower = mode.lowercased()
+            if mLower.contains("roman") || englishSubmodeIDs.contains(mode) || mLower.hasSuffix(".abc") {
+                isChinese = false
+            }
         }
         return isChinese
     }
@@ -174,13 +239,27 @@ class InputMethodManager: NSObject {
 
     private func switchTo(chinese: Bool) {
         refreshCachedInputSource()
+        // 注意：这里不调用 adoptPendingTargetIfActive()。
+        // switchTo 由 applyStrategy（应用规则）调用，应始终以真实 TIS 状态为基准，
+        // 而不以"我们期望的目标"为基准；否则 pendingSwitchTarget 可能让 guard
+        // 错误地 bail-out，导致规则下的应用中 CapsLock 切换失效。
         guard cachedIsChinese != chinese else { return }
         switchViaTIS(chinese: chinese)
     }
 
     func toggleInputMethod() {
         refreshCachedInputSource()
+        adoptPendingTargetIfActive()
         switchViaTIS(chinese: !cachedIsChinese)
+    }
+
+    /// 紧接的上次切换尚未在 TIS 中落地时，TISCopyCurrentKeyboardInputSource 仍返回旧值。
+    /// 连按 CapsLock 时若以旧值做"取反"，第二次会反向回到第一次的目标，使两次按键合并为
+    /// 单次切换，并造成 HUD 显示与实际输入状态长期不一致。改以目标值为基准即可正确交替。
+    private func adoptPendingTargetIfActive() {
+        if let target = pendingSwitchTarget, Date() < pendingSwitchDeadline {
+            cachedIsChinese = target
+        }
     }
 
     // MARK: - TIS 切换（每次获取新鲜列表，避免缓存 TISInputSource 指针悬空）
@@ -190,6 +269,10 @@ class InputMethodManager: NSObject {
            selectCachedInputSource(id: cachedID, chinese: chinese) {
             return
         }
+
+        // 切换为中文时：优先通过 kTISTypeKeyboardInputMode 子节点直接进入中文子模式，
+        // 而非仅激活父级 source（父级会恢复上次离开时的 submode，可能是 ABC 英文模式）。
+        if chinese && selectChineseInputMode() { return }
 
         // 注意：所有对 rawPtr 的使用必须在 cfList 存活期间完成，
         // 不可将 rawPtr 存出函数范围，否则 CFArray 释放后指针悬空。
@@ -216,7 +299,7 @@ class InputMethodManager: NSObject {
             let lower = id.lowercased()
 
             if chinese {
-                // Apple Pinyin 是最优中文源
+                // Apple Pinyin 是最优中文源（子模式选择失败时的兜底）
                 if lower == "com.apple.inputmethod.scim.itabc" ||
                    lower == "com.apple.inputmethod.scim.pinyin" {
                     primaryPtr = rawPtr; primaryID = id; break
@@ -250,6 +333,42 @@ class InputMethodManager: NSObject {
         // cfList 在此处释放（函数结束）
     }
 
+    /// 通过 kTISTypeKeyboardInputMode 子节点直接切换到中文子模式。
+    /// 这是解决"Apple Pinyin 父级恢复英文 submode"问题的核心：直接 select mode 节点，
+    /// 系统不会走"恢复上次状态"逻辑，而是强制进入该子模式。
+    @discardableResult
+    private func selectChineseInputMode() -> Bool {
+        // 包含不可选的 source（第二参数 true），因为 mode 节点通常不在 isSelectCapable 列表里
+        guard let list = TISCreateInputSourceList(nil, true)?.takeRetainedValue() else { return false }
+        let count = CFArrayGetCount(list)
+        for i in 0..<count {
+            guard let raw = CFArrayGetValueAtIndex(list, i) else { continue }
+            let src = Unmanaged<TISInputSource>.fromOpaque(raw).takeUnretainedValue()
+
+            // 只考虑 InputMode 类型的节点
+            guard let typePtr = TISGetInputSourceProperty(src, kTISPropertyInputSourceType) else { continue }
+            let type_ = Unmanaged<CFString>.fromOpaque(typePtr).takeUnretainedValue() as String
+            guard type_ == (kTISTypeKeyboardInputMode as String) else { continue }
+
+            guard let modePtr = TISGetInputSourceProperty(src, kTISPropertyInputModeID) else { continue }
+            let modeID = Unmanaged<CFString>.fromOpaque(modePtr).takeUnretainedValue() as String
+
+            guard Self.chineseInputModeIDs.contains(modeID) else { continue }
+
+            // 确认该 mode 节点可被选中
+            guard let capPtr = TISGetInputSourceProperty(src, kTISPropertyInputSourceIsSelectCapable) else { continue }
+            let capable = Unmanaged<CFBoolean>.fromOpaque(capPtr).takeUnretainedValue()
+            guard CFBooleanGetValue(capable) else { continue }
+
+            let status = selectInputSource(src, id: modeID, chinese: true)
+            if status == noErr {
+                NSLog("[TailInput] switched to Chinese mode node: %@", modeID)
+                return true
+            }
+        }
+        return false
+    }
+
     private func selectCachedInputSource(id: String, chinese: Bool) -> Bool {
         let filter = [
             kTISPropertyInputSourceID as String: id,
@@ -276,8 +395,7 @@ class InputMethodManager: NSObject {
     private func selectInputSource(_ source: TISInputSource, id: String?, chinese: Bool) -> OSStatus {
         let result = TISSelectInputSource(source)
         if result == noErr {
-            // 乐观更新：TISSelectInputSource 是异步生效的，立即 re-read 会拿到旧值。
-            // 这里直接写入目标值；TIS 通知到来后 handleInputMethodChange 会用真实值覆盖。
+            // 乐观更新：TISSelectInputSource 异步生效，立即 re-read 会拿到旧值。
             cachedIsChinese = chinese
             cachedInputSourceID = id
             if chinese {
@@ -285,10 +403,54 @@ class InputMethodManager: NSObject {
             } else {
                 cachedEnglishInputSourceID = id
             }
+            // 150ms 窗口：告知通知处理器"TIS 在此期间报告旧值属正常，应忽略"
+            pendingSwitchTarget = chinese
+            pendingSwitchDeadline = Date(timeIntervalSinceNow: 0.15)
+            // 递增代数并调度 re-read；旧 re-read 被取消，防止它清除本次的 pending
+            switchGeneration += 1
+            scheduleReRead(forGeneration: switchGeneration)
             deliverInputMethodChanged(chinese)
             NSLog("[TailInput] switched to %@", chinese ? "Chinese" : "English")
         }
         return result
+    }
+
+    /// 80ms 后确认 TIS 已落地，并清除 pendingSwitchTarget。
+    /// generation 守卫确保只有最新一次 selectInputSource 的 re-read 能清除 pending，
+    /// 旧通知触发的 re-read（代数已过期）直接退出，不干扰新切换的状态。
+    /// 额外检测：切中文目标后若 TIS 仍报英文 submode（Apple Pinyin ABC 模式回弹），
+    /// 主动重试 selectChineseInputMode() 一次并纠正状态。
+    private func scheduleReRead(forGeneration gen: Int) {
+        reReadItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            guard self.switchGeneration == gen else { return }
+            let prev = self.cachedIsChinese
+            self.refreshCachedInputSource()
+            let settled = self.cachedIsChinese
+
+            // 诊断：目标是中文，但 TIS 落地后仍报英文（submode 回弹）
+            if let target = self.pendingSwitchTarget, target == true, settled == false {
+                NSLog("[TailInput] re-read: Chinese target but TIS settled to English (submode rebound), retrying mode select")
+                if self.selectChineseInputMode() {
+                    // 重试成功：selectInputSource 已更新状态并重新调度 re-read，本次 re-read 停止
+                    return
+                }
+                // 重试失败：暂时维持乐观目标值，让 HUD 不撒谎；等下一次通知修正
+                NSLog("[TailInput] selectChineseInputMode retry failed, keeping optimistic state")
+                self.pendingSwitchTarget = nil
+                return
+            }
+
+            // TIS 已落地：清除 pending，不再用乐观值覆盖后续通知
+            self.pendingSwitchTarget = nil
+            if settled != prev {
+                self.onInputStateRefreshed?(settled)
+                self.deliverInputMethodChanged(settled)
+            }
+        }
+        reReadItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: item)
     }
 
     private func clearCachedTargetID(chinese: Bool) {
@@ -374,11 +536,34 @@ class InputMethodManager: NSObject {
     }
 
     @objc private func handleInputMethodChange() {
-        // DistributedNotificationCenter 在注册线程（主线程）回调，直接操作缓存
         refreshCachedInputSource()
-        let isChinese = cachedIsChinese
 
-        deliverInputMethodChanged(isChinese)
+        // 若在 pendingSwitchTarget 窗口内 TIS 报告的是旧值，用目标值替代以避免闪烁。
+        // 这发生在 TISSelectInputSource 异步生效期间：通知先到，但状态尚未稳定。
+        let now = Date()
+        let effectiveState: Bool
+        if let target = pendingSwitchTarget, now < pendingSwitchDeadline {
+            if cachedIsChinese != target {
+                // TIS 尚未稳定：继续使用乐观目标值
+                effectiveState = target
+                cachedIsChinese = target
+            } else {
+                // TIS 已与目标对齐，但不在此清除 pending —— 等 scheduleReRead 的 re-read 来清除。
+                // 这里清除会产生 Bug B：双重通知里第二条通知使 TIS 正好匹配 target，
+                // 从而提前清除 pending，导致后续通知里的旧值无法被正确覆盖。
+                effectiveState = cachedIsChinese
+            }
+        } else {
+            // 窗口已过期或没有 pending：清除过期的 pending（正常情况 re-read 早已清除）
+            pendingSwitchTarget = nil
+            effectiveState = cachedIsChinese
+        }
+
+        onInputStateRefreshed?(effectiveState)
+        deliverInputMethodChanged(effectiveState)
+        // 注意：不在此调度 asyncAfter re-read。
+        // re-read 由 selectInputSource → scheduleReRead 统一管理，
+        // 代数守卫保证只有最新切换的 re-read 才能清除 pending。
     }
 
     private func deliverInputMethodChanged(_ isChinese: Bool) {
