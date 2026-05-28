@@ -89,5 +89,4 @@ fastlane/test_output
 iOSInjectionProject/
 
 # Claude Code session data
-.claude/*
-!.claude/settings.json
+.claude/
