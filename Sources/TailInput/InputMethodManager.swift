@@ -132,6 +132,24 @@ class InputMethodManager: NSObject {
         "pinyin", "chinese", "wubi", "shuangpin", "cangjie", "zhuyin",
     ]
 
+    // kTISTypeKeyboardInputMode 子节点：直接 select 可保证进入正确子模式，
+    // 而非仅激活父级 source（父级会恢复上次离开时的子模式，可能是英文 submode）。
+    // 大写字母保留原始 Apple ID 大小写（TIS 区分）。
+    private static let chineseInputModeIDs: Set<String> = [
+        "com.apple.inputmethod.SCIM.ITABC",
+        "com.apple.inputmethod.SCIM.Shuangpin",
+        "com.apple.inputmethod.SCIM.Wubi",
+        "com.apple.inputmethod.TCIM.Pinyin",
+        "com.apple.inputmethod.TCIM.Cangjie",
+        "com.apple.inputmethod.TCIM.Zhuyin",
+    ]
+
+    // Pinyin 等输入法的英文 in-source 子模式 ID（不含 "roman"，需独立识别）
+    private static let englishSubmodeIDs: Set<String> = [
+        "com.apple.inputmethod.SCIM.ABC",
+        "com.apple.inputmethod.TCIM.Roman",
+    ]
+
     static func isChineseID(_ lowerId: String) -> Bool {
         if appleChineseInputSourceIDs.contains(lowerId) {
             return true
@@ -150,12 +168,16 @@ class InputMethodManager: NSObject {
     // MARK: - 纯函数：输入法状态判断（internal 以支持单元测试）
 
     /// 根据 TIS source ID 和 mode ID 判断最终的中英文状态。
-    /// modeID 含 "roman" 时，即使 sourceID 被识别为中文，也判定为英文（in-source 英文模式）。
+    /// Apple Pinyin 英文子模式 modeID 为 "com.apple.inputmethod.SCIM.ABC"，不含 "roman"，
+    /// 需通过 englishSubmodeIDs 集合和 ".abc" 后缀额外识别，否则会误报为中文。
     static func detectInputMethodState(sourceID: String, modeID: String?) -> Bool {
         let lower = sourceID.lowercased()
         var isChinese = isChineseID(lower)
-        if isChinese, let mode = modeID, mode.lowercased().contains("roman") {
-            isChinese = false
+        if isChinese, let mode = modeID {
+            let mLower = mode.lowercased()
+            if mLower.contains("roman") || englishSubmodeIDs.contains(mode) || mLower.hasSuffix(".abc") {
+                isChinese = false
+            }
         }
         return isChinese
     }
@@ -248,6 +270,10 @@ class InputMethodManager: NSObject {
             return
         }
 
+        // 切换为中文时：优先通过 kTISTypeKeyboardInputMode 子节点直接进入中文子模式，
+        // 而非仅激活父级 source（父级会恢复上次离开时的 submode，可能是 ABC 英文模式）。
+        if chinese && selectChineseInputMode() { return }
+
         // 注意：所有对 rawPtr 的使用必须在 cfList 存活期间完成，
         // 不可将 rawPtr 存出函数范围，否则 CFArray 释放后指针悬空。
         let filter = [kTISPropertyInputSourceIsSelectCapable as String: true] as CFDictionary
@@ -273,7 +299,7 @@ class InputMethodManager: NSObject {
             let lower = id.lowercased()
 
             if chinese {
-                // Apple Pinyin 是最优中文源
+                // Apple Pinyin 是最优中文源（子模式选择失败时的兜底）
                 if lower == "com.apple.inputmethod.scim.itabc" ||
                    lower == "com.apple.inputmethod.scim.pinyin" {
                     primaryPtr = rawPtr; primaryID = id; break
@@ -305,6 +331,42 @@ class InputMethodManager: NSObject {
             NSLog("[TailInput] TISSelectInputSource failed: %d", result)
         }
         // cfList 在此处释放（函数结束）
+    }
+
+    /// 通过 kTISTypeKeyboardInputMode 子节点直接切换到中文子模式。
+    /// 这是解决"Apple Pinyin 父级恢复英文 submode"问题的核心：直接 select mode 节点，
+    /// 系统不会走"恢复上次状态"逻辑，而是强制进入该子模式。
+    @discardableResult
+    private func selectChineseInputMode() -> Bool {
+        // 包含不可选的 source（第二参数 true），因为 mode 节点通常不在 isSelectCapable 列表里
+        guard let list = TISCreateInputSourceList(nil, true)?.takeRetainedValue() else { return false }
+        let count = CFArrayGetCount(list)
+        for i in 0..<count {
+            guard let raw = CFArrayGetValueAtIndex(list, i) else { continue }
+            let src = Unmanaged<TISInputSource>.fromOpaque(raw).takeUnretainedValue()
+
+            // 只考虑 InputMode 类型的节点
+            guard let typePtr = TISGetInputSourceProperty(src, kTISPropertyInputSourceType) else { continue }
+            let type_ = Unmanaged<CFString>.fromOpaque(typePtr).takeUnretainedValue() as String
+            guard type_ == (kTISTypeKeyboardInputMode as String) else { continue }
+
+            guard let modePtr = TISGetInputSourceProperty(src, kTISPropertyInputModeID) else { continue }
+            let modeID = Unmanaged<CFString>.fromOpaque(modePtr).takeUnretainedValue() as String
+
+            guard Self.chineseInputModeIDs.contains(modeID) else { continue }
+
+            // 确认该 mode 节点可被选中
+            guard let capPtr = TISGetInputSourceProperty(src, kTISPropertyInputSourceIsSelectCapable) else { continue }
+            let capable = Unmanaged<CFBoolean>.fromOpaque(capPtr).takeUnretainedValue()
+            guard CFBooleanGetValue(capable) else { continue }
+
+            let status = selectInputSource(src, id: modeID, chinese: true)
+            if status == noErr {
+                NSLog("[TailInput] switched to Chinese mode node: %@", modeID)
+                return true
+            }
+        }
+        return false
     }
 
     private func selectCachedInputSource(id: String, chinese: Bool) -> Bool {
@@ -356,6 +418,8 @@ class InputMethodManager: NSObject {
     /// 80ms 后确认 TIS 已落地，并清除 pendingSwitchTarget。
     /// generation 守卫确保只有最新一次 selectInputSource 的 re-read 能清除 pending，
     /// 旧通知触发的 re-read（代数已过期）直接退出，不干扰新切换的状态。
+    /// 额外检测：切中文目标后若 TIS 仍报英文 submode（Apple Pinyin ABC 模式回弹），
+    /// 主动重试 selectChineseInputMode() 一次并纠正状态。
     private func scheduleReRead(forGeneration gen: Int) {
         reReadItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
@@ -364,6 +428,20 @@ class InputMethodManager: NSObject {
             let prev = self.cachedIsChinese
             self.refreshCachedInputSource()
             let settled = self.cachedIsChinese
+
+            // 诊断：目标是中文，但 TIS 落地后仍报英文（submode 回弹）
+            if let target = self.pendingSwitchTarget, target == true, settled == false {
+                NSLog("[TailInput] re-read: Chinese target but TIS settled to English (submode rebound), retrying mode select")
+                if self.selectChineseInputMode() {
+                    // 重试成功：selectInputSource 已更新状态并重新调度 re-read，本次 re-read 停止
+                    return
+                }
+                // 重试失败：暂时维持乐观目标值，让 HUD 不撒谎；等下一次通知修正
+                NSLog("[TailInput] selectChineseInputMode retry failed, keeping optimistic state")
+                self.pendingSwitchTarget = nil
+                return
+            }
+
             // TIS 已落地：清除 pending，不再用乐观值覆盖后续通知
             self.pendingSwitchTarget = nil
             if settled != prev {
