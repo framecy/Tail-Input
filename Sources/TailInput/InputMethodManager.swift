@@ -265,14 +265,22 @@ class InputMethodManager: NSObject {
     // MARK: - TIS 切换（每次获取新鲜列表，避免缓存 TISInputSource 指针悬空）
 
     private func switchViaTIS(chinese: Bool) {
+        // ── 中文路径：必须先走 mode-node ──
+        // 缓存按 kTISPropertyInputSourceID 过滤会优先命中父级 source —— Pinyin 父 source 与
+        // Chinese mode node 的 kTISPropertyInputSourceID 是同一字符串（如 "com.apple.inputmethod.SCIM.ITABC"），
+        // 而父级 selectCapable=true、mode node selectCapable 不稳定，过滤器永远返回父级。
+        // 选父级会触发 TIS 的"恢复上次子模式"逻辑——若上次 Pinyin 离开时在 ABC 子模式
+        // （例如用户用 Pinyin 内置 Shift 切到 ABC，或被其他规则带去英文），名义 select 成功但实际
+        // 进入英文输入状态。直接 select mode 节点是规避 rebound 的唯一可靠路径。
+        if chinese && selectChineseInputMode() { return }
+
+        // ── 缓存兜底 ──
+        // 英文：cachedEnglishInputSourceID = "com.apple.keylayout.ABC"，无 submode 问题。
+        // 中文：仅在 selectChineseInputMode 失败时（如 Sogou/Rime 等无 mode 节点的输入法）才命中。
         if let cachedID = chinese ? cachedChineseInputSourceID : cachedEnglishInputSourceID,
            selectCachedInputSource(id: cachedID, chinese: chinese) {
             return
         }
-
-        // 切换为中文时：优先通过 kTISTypeKeyboardInputMode 子节点直接进入中文子模式，
-        // 而非仅激活父级 source（父级会恢复上次离开时的 submode，可能是 ABC 英文模式）。
-        if chinese && selectChineseInputMode() { return }
 
         // 注意：所有对 rawPtr 的使用必须在 cfList 存活期间完成，
         // 不可将 rawPtr 存出函数范围，否则 CFArray 释放后指针悬空。
@@ -338,7 +346,9 @@ class InputMethodManager: NSObject {
     /// 系统不会走"恢复上次状态"逻辑，而是强制进入该子模式。
     @discardableResult
     private func selectChineseInputMode() -> Bool {
-        // 包含不可选的 source（第二参数 true），因为 mode 节点通常不在 isSelectCapable 列表里
+        // 包含不可选的 source（第二参数 true）—— mode 节点的 kTISPropertyInputSourceIsSelectCapable
+        // 经常报 false（尤其当 Pinyin 当前正处于 ABC 子模式时），但 TISSelectInputSource 实际可以接受
+        // 选中并切换到该 mode。所以不做 pre-check，由 TISSelectInputSource 的返回值决定。
         guard let list = TISCreateInputSourceList(nil, true)?.takeRetainedValue() else { return false }
         let count = CFArrayGetCount(list)
         for i in 0..<count {
@@ -355,11 +365,7 @@ class InputMethodManager: NSObject {
 
             guard Self.chineseInputModeIDs.contains(modeID) else { continue }
 
-            // 确认该 mode 节点可被选中
-            guard let capPtr = TISGetInputSourceProperty(src, kTISPropertyInputSourceIsSelectCapable) else { continue }
-            let capable = Unmanaged<CFBoolean>.fromOpaque(capPtr).takeUnretainedValue()
-            guard CFBooleanGetValue(capable) else { continue }
-
+            // 直接尝试选中，不预过滤 selectCapable（mode 节点 capable 报 false 但实际可选中是常态）
             let status = selectInputSource(src, id: modeID, chinese: true)
             if status == noErr {
                 NSLog("[TailInput] switched to Chinese mode node: %@", modeID)

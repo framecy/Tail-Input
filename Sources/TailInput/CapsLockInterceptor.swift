@@ -28,9 +28,9 @@ class CapsLockInterceptor {
     // 纯切换模式专用：去重窗口
     // CapsLock 一次物理按下可能产生多个 flagsChanged 事件（DOWN + UP），
     // 加上 IOHIDSetModifierLockState 反向修改状态会再触发一次回响事件，flip-flop
-    // 状态机会被打乱。直接用时间窗去重最稳：100ms 内的事件视为同一次按下的派生。
+    // 状态机会被打乱。直接用时间窗去重最稳：250ms 内的事件视为同一次按下的派生。
     private var lastPureTriggerNanos: UInt64 = 0
-    private let pureDebounceNanos: UInt64 = 100_000_000
+    private let pureDebounceNanos: UInt64 = 250_000_000
 
     private static let timebaseInfo: mach_timebase_info_data_t = {
         var info = mach_timebase_info_data_t()

@@ -28,6 +28,22 @@ class AppObserver: NSObject {
         return nil
     }
 
+    // 忽略的系统覆盖层级应用（菜单栏、控制中心、输入法切换 HUD 等）。
+    // 这些应用短暂获取焦点时不应被视为前台应用切换，否则在它们关闭、焦点交还给原应用时，
+    // 会错误地触发原应用的策略，覆盖用户在此期间的手动切换（如点击菜单栏切换中英文）。
+    private static let ignoredBundleIDs: Set<String> = [
+        "com.apple.systemuiserver",
+        "com.apple.TextInputUI.Menu",
+        "com.apple.HIToolbox",
+        "com.apple.controlcenter",
+        "com.apple.notificationcenterui",
+        "com.apple.WindowManager",
+        "com.apple.loginwindow",
+        "com.apple.dock",
+        "com.apple.AppSSOAgent",
+        "com.apple.SecurityAgent"
+    ]
+
     func start() {
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -49,6 +65,20 @@ class AppObserver: NSObject {
               let identifier = Self.identifier(for: app) else {
             return
         }
+
+        // ── 忽略系统覆盖层与输入法后台进程 ──
+        // 这些进程短暂获取焦点时不应被视为真实的前台应用切换，
+        // 否则在焦点交还给原应用时，会错误地重新触发原应用的策略，覆盖用户在此期间的手动切换。
+        let lowerID = identifier.lowercased()
+        let isIgnored = Self.ignoredBundleIDs.contains(identifier) ||
+                        lowerID.contains(".inputmethod.") ||
+                        lowerID.contains("sogou") ||
+                        lowerID.contains("baiduim") ||
+                        lowerID.contains("rime") ||
+                        lowerID.contains("squirrel") ||
+                        lowerID.contains("wetype") ||
+                        identifier == "com.framed.TailInput"
+        guard !isIgnored else { return }
 
         // ── 跳过同 App 重复激活事件 ──
         guard identifier != lastActivatedBundleId else { return }
