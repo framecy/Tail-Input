@@ -74,9 +74,11 @@
                                 <span class="sidebar-label">开机自启动</span>
                                 <span class="toggle-on"></span>
                             </div>
-                            <div class="sidebar-row">
-                                <span class="sidebar-label">CapsLock 兼容</span>
-                                <span class="toggle-off"></span>
+                            <div class="sidebar-section-label" style="margin-top:0.5rem">CapsLock 切换</div>
+                            <div class="sidebar-seg" style="margin-bottom:0.4rem">
+                                <span class="seg-item">关闭</span>
+                                <span class="seg-item">兼容</span>
+                                <span class="seg-item active">纯切换</span>
                             </div>
                             <div class="sidebar-sep"></div>
                             <div class="sidebar-section-label">其他应用默认</div>
@@ -242,6 +244,10 @@
                 <div class="tech-item">
                     <span class="tech-label">代数守卫 re-read</span>
                     <p>switchGeneration 计数器确保只有最新一次 TIS 切换的延迟补读能清除 pendingSwitchTarget，彻底解决设置了应用规则后纯切换模式失效的问题。</p>
+                </div>
+                <div class="tech-item">
+                    <span class="tech-label">中文子模式直选</span>
+                    <p>切换为中文时优先通过 kTISTypeKeyboardInputMode 子节点直接激活中文 submode，而非仅选父级 source。解决 Apple Pinyin 在英文 submode（SCIM.ABC）下切回中文后 HUD 显示正确但实际仍输入英文的问题。</p>
                 </div>
             </div>
         </section>
