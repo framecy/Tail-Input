@@ -134,8 +134,13 @@ class CapsLockInterceptor {
             lastPureTriggerNanos = now
 
             // 真实物理按下：切换输入法 + 强制清掉 CapsLock 锁定状态
-            InputMethodManager.shared.toggleInputMethod()
-            forceCapsLockOff()
+            // 必须异步执行：CGEventTap 回调会阻塞 WindowServer 的事件队列。
+            // 若在此同步调用 IOHIDSetModifierLockState，IOKit 驱动会尝试向上游广播状态变更，
+            // 而上游（WindowServer）正被当前线程阻塞，导致经典的环形死锁，引起整个系统 UI 卡死。
+            DispatchQueue.main.async {
+                InputMethodManager.shared.toggleInputMethod()
+                self.forceCapsLockOff()
+            }
             return nil
 
         case .compat:
