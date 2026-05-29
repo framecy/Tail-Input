@@ -123,8 +123,8 @@ class InputMethodManager: NSObject {
     ]
 
     private static let chineseKeywords = [
-        "chinese", "pinyin", "sogou", "wubi", "baidu", "shuangpin",
-        "rime", "squirrel", "cangjie", "zhuyin", "stroke", "itabc",
+        "chinese", "pinyin", "scim", "tcim", "sogou", "wubi", "baidu",
+        "shuangpin", "rime", "squirrel", "cangjie", "zhuyin", "stroke", "itabc",
     ]
 
     private static let chineseNameKeywords = [

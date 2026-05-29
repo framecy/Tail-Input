@@ -6,8 +6,10 @@ class AppObserver: NSObject {
     var onAppActivated: ((String, String?) -> Void)?
     var isEnabled: Bool = true {
         didSet {
-            // 如果刚刚开启，顺便对当前最前台的应用执行一次策略
+            // 如果刚刚开启，取消挂起的 workItem 并对当前最前台应用立即执行一次策略
             if isEnabled {
+                activateWorkItem?.cancel()
+                activateWorkItem = nil
                 if let activeApp = NSWorkspace.shared.frontmostApplication,
                    let bundleId = activeApp.bundleIdentifier {
                     onAppActivated?(bundleId, activeApp.localizedName)
@@ -69,6 +71,9 @@ class AppObserver: NSObject {
         // ── 忽略系统覆盖层与输入法后台进程 ──
         // 这些进程短暂获取焦点时不应被视为真实的前台应用切换，
         // 否则在焦点交还给原应用时，会错误地重新触发原应用的策略，覆盖用户在此期间的手动切换。
+        // 按下 CapsLock 时输入法的 helper 进程（activationPolicy != .regular）会短暂激活，
+        // 若不过滤会触发策略切换，导致 CapsLock 的切换结果被强制覆盖。
+        guard app.activationPolicy == .regular else { return }
         let lowerID = identifier.lowercased()
         let isIgnored = Self.ignoredBundleIDs.contains(identifier) ||
                         lowerID.contains(".inputmethod.") ||
