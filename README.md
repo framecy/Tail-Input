@@ -2,7 +2,7 @@
 
 > 按应用自动切换输入法的 macOS 工具 — 轻量、无感知、零配置即用。
 
-**版本：v1.5.0** · macOS 13.0+ · Apple Silicon & Intel · [下载](https://github.com/framecy/Tail-Input/releases)
+**版本：v1.5.1** · macOS 13.0+ · Apple Silicon & Intel · [下载](https://github.com/framecy/Tail-Input/releases)
 
 ---
 
@@ -24,7 +24,7 @@
 
 ### DMG（推荐）
 
-1. 下载 [`Tail-Input-1.5.0.dmg`](https://github.com/framecy/Tail-Input/releases/latest)
+1. 下载 [`Tail-Input-1.5.1.dmg`](https://github.com/framecy/Tail-Input/releases/latest)
 2. 打开后将 `Tail Input.app` 拖入 `Applications`
 3. 首次运行完成 Onboarding 引导即可
 
@@ -172,6 +172,12 @@ Tests/TailInputTests/
 ---
 
 ## 更新记录
+
+### v1.5.1
+- 修复：CapsLock 纯切换模式死锁 — CGEventTap 回调中同步调用 IOHIDSetModifierLockState 导致 WindowServer 环形死锁，改为异步派发
+- 修复：CapsLock 切换失败 — 输入法 helper 进程短暂激活覆盖 CapsLock 切换结果，添加 activationPolicy == .regular 守卫
+- 修复：Apple 内置拼音 HUD/状态栏显示为 "EN" — 补齐 scim/tcim 中文检测关键词
+- 修复：AppObserver 重新启用时未取消挂起 workItem，可能导致双重触发
 
 ### v1.5.0
 - 新增：CapsLock 三态切换 — 关闭 / 兼容（短按切换 + 长按保留大写锁定）/ 纯切换（按下即切换 + IOKit 钳制 LED 不亮 + 完全禁用大写锁定），替代原单一兼容开关
