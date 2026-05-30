@@ -31,7 +31,7 @@
         <!-- 主视觉区 -->
         <main class="hero">
             <div class="hero-content">
-                <div class="badge">v1.5.1 &middot; 开源 &middot; macOS 13+</div>
+                <div class="badge">v1.6.0 &middot; 开源 &middot; macOS 13+</div>
                 <h1 class="hero-title">切换 App<br><span class="text-gradient">输入法跟着走</span></h1>
                 <p class="hero-subtitle">
                     打开 Xcode 自动切英文，回微信自动切中文。<br>
@@ -39,7 +39,7 @@
                 </p>
                 <div class="hero-actions">
                     <a href="https://github.com/framecy/Tail-Input/releases/latest" class="btn btn-primary">
-                        ↓ 下载 v1.5.1
+                        ↓ 下载 v1.6.0
                     </a>
                     <a href="https://github.com/framecy/Tail-Input" class="btn btn-secondary">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -91,7 +91,7 @@
                                 <div class="sf-icon">⌨️</div>
                                 <div class="sf-text">
                                     <div class="sf-name">Tail Input</div>
-                                    <div class="sf-meta">v1.5.1 · MIT</div>
+                                    <div class="sf-meta">v1.6.0 · MIT</div>
                                 </div>
                             </div>
                         </div>
@@ -147,7 +147,7 @@
                         <span class="fc-label">核心</span>
                     </div>
                     <h3 class="fc-title">按应用定制策略</h3>
-                    <p class="fc-desc">Xcode 强制英文、微信强制中文、终端保持原状 — 每个 App 独立配置，一次设定永久生效。</p>
+                    <p class="fc-desc">Xcode 强制英文、微信强制中文、终端保持原状、回到备忘录恢复上次输入源 — 四种策略按 App 独立配置。</p>
                     <div class="fc-illustration">
                         <div class="ill-row">
                             <span class="ill-dot ill-dot-blue"></span>
@@ -164,6 +164,11 @@
                             <span class="ill-name">Terminal</span>
                             <span class="ill-badge ill-badge-keep">保持</span>
                         </div>
+                        <div class="ill-row">
+                            <span class="ill-dot ill-dot-violet"></span>
+                            <span class="ill-name">备忘录</span>
+                            <span class="ill-badge ill-badge-keep">恢复</span>
+                        </div>
                     </div>
                 </div>
 
@@ -171,7 +176,14 @@
                 <div class="fc fc-green">
                     <span class="fc-pill fc-pill-green">🛡️</span>
                     <h3 class="fc-title">隐私优先</h3>
-                    <p class="fc-desc">无需辅助功能权限，基于 NSWorkspace 通知感知焦点切换，不读取任何键盘输入内容。</p>
+                    <p class="fc-desc">基础功能零权限；CapsLock 切换需辅助功能，强制英文标点需输入监控 — 按需授权，osascript 引导。</p>
+                </div>
+
+                <!-- 强制英文标点 — 1 col -->
+                <div class="fc fc-rose">
+                    <span class="fc-pill fc-pill-rose">✏️</span>
+                    <h3 class="fc-title">强制英文标点</h3>
+                    <p class="fc-desc">中文输入法下分号、引号、逗号等自动替换为 ASCII 对应字符 — CGEvent 高性能替换，500ms 缓存零阻塞。</p>
                 </div>
 
                 <!-- 乐观缓存 — 1 col -->
@@ -258,7 +270,7 @@
             <div class="install-steps glass-card">
                 <div class="install-step">
                     <span class="step-num">1</span>
-                    <p>下载 <a href="https://github.com/framecy/Tail-Input/releases/latest"><code>Tail-Input-1.5.1.dmg</code></a>，打开后将 App 拖入 <strong>Applications</strong></p>
+                    <p>下载 <a href="https://github.com/framecy/Tail-Input/releases/latest"><code>TailInput-1.6.0.dmg</code></a>，打开后将 App 拖入 <strong>Applications</strong></p>
                 </div>
                 <div class="install-step">
                     <span class="step-num">2</span>
