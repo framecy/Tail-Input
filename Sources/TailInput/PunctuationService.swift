@@ -6,6 +6,7 @@ final class PunctuationService {
     private var isEnabled = false
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var registeredRunLoop: CFRunLoop?  // 保存 start() 时的 RunLoop，deinit 时用于正确移除
 
     // CJKV 状态缓存 — 由 TIS 通知异步更新，CGEventTap callback 内只读取，绝不调用 TIS API。
     // 原因：CGEventTap callback 运行在 WindowServer 事件分发线程，
@@ -43,10 +44,11 @@ final class PunctuationService {
     }
 
     private func stopSync() {
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+        if let source = runLoopSource, let rl = registeredRunLoop {
+            CFRunLoopRemoveSource(rl, source, .commonModes)
             runLoopSource = nil
         }
+        registeredRunLoop = nil
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)
@@ -76,7 +78,9 @@ final class PunctuationService {
 
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource!, .commonModes)
+        let currentRL = CFRunLoopGetCurrent()
+        CFRunLoopAddSource(currentRL, runLoopSource!, .commonModes)
+        registeredRunLoop = currentRL
         CGEvent.tapEnable(tap: tap, enable: true)
         isEnabled = true
 

@@ -94,6 +94,7 @@ final class TCCManager {
         )
         if let tap = tap {
             CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
         }
         return tap != nil
     }

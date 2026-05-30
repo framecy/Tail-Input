@@ -31,13 +31,16 @@ final class HelperDaemon {
         process.arguments = []
 
         let stdoutPipe = Pipe()
+        let stdinPipe = Pipe()
         process.standardOutput = stdoutPipe
+        process.standardInput = stdinPipe
         process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
             helperProcess = process
             helperPID = process.processIdentifier
+            connection = stdinPipe.fileHandleForWriting
             logger.info("helper launched pid=\(helperPID)")
 
             // Read responses from stdout
