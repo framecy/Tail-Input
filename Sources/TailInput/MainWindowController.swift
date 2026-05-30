@@ -361,7 +361,7 @@ private final class SidebarView: NSView {
         nameLabel.textColor = .labelColor
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let versionLabel = NSTextField(labelWithString: "v\(Bundle.main.shortVersion) · MIT License")
+        let versionLabel = NSTextField(labelWithString: "v\(Bundle.main.shortVersion) (build \(Bundle.main.buildVersion)) · MIT License")
         versionLabel.font = .systemFont(ofSize: 10)
         versionLabel.textColor = .tertiaryLabelColor
         versionLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -1306,6 +1306,9 @@ private final class Spacer: NSView {
 private extension Bundle {
     var shortVersion: String {
         infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+    var buildVersion: String {
+        infoDictionary?["CFBundleVersion"] as? String ?? "?"
     }
 }
 
