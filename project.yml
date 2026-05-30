@@ -16,6 +16,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources/TailInput
+      - path: Sources/Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.framed.TailInput
@@ -26,6 +27,34 @@ targets:
         PRODUCT_MODULE_NAME: TailInput
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    preBuildScripts:
+      - name: "Copy Helper into Bundle"
+        script: |
+          HELPER_SRC="${BUILT_PRODUCTS_DIR}/TailInputHelper"
+          HELPER_DST="${BUILT_PRODUCTS_DIR}/Tail Input.app/Contents/MacOS/TailInputHelper"
+          if [ -f "${HELPER_SRC}" ]; then
+            cp -f "${HELPER_SRC}" "${HELPER_DST}"
+            echo "Helper copied to bundle"
+          else
+            echo "Warning: Helper binary not found at ${HELPER_SRC}"
+          fi
+        basedOnDependencyAnalysis: false
+
+  TailInputHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/Helper
+      - path: Sources/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.framed.TailInputHelper
+        PRODUCT_NAME: TailInputHelper
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
 
   TailInputTests:
     type: bundle.unit-test
@@ -50,6 +79,7 @@ schemes:
     build:
       targets:
         TailInput: all
+        TailInputHelper: all
         TailInputTests: [test]
     test:
       targets:
