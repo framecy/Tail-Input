@@ -1,7 +1,6 @@
 import Cocoa
 import Carbon
 
-@MainActor
 final class CJKVFixWindow {
     private static let logger = TILogger(category: "CJKVFixWindow")
     private static var temporaryWindow: NSWindow?

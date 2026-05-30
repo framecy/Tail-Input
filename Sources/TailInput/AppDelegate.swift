@@ -43,6 +43,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateStatusBarButton()
         }
 
+        // 离开 App 前保存当前输入源（用于 restorePrevious 策略）
+        AppObserver.shared.onAppWillChange = { bundleID in
+            InputMethodManager.shared.saveCurrentInputSource(for: bundleID)
+        }
+
         // 绑定系统激活事件
         AppObserver.shared.onAppActivated = { [weak self] bundleId, appName in
             guard let self = self else { return }
@@ -50,7 +55,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if self.isEnabled {
                 InputMethodManager.shared.applyStrategy(for: bundleId, appName: appName)
             } else {
-                // 就算未开启总开关，也要更新状态存储
                 InputMethodManager.shared.currentAppBundleIdentifier = bundleId
                 InputMethodManager.shared.currentAppName = appName
             }
