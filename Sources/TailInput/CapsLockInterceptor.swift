@@ -152,7 +152,13 @@ class CapsLockInterceptor {
                 let elapsed = mach_absolute_time() - keyDownTime
                 let elapsedNanos = elapsed * UInt64(Self.timebaseInfo.numer) / UInt64(Self.timebaseInfo.denom)
                 if elapsedNanos < shortPressThresholdNanos {
-                    InputMethodManager.shared.toggleInputMethod()
+                    // 必须异步派发：CGEventTap callback 运行在 WindowServer 事件分发线程。
+                    // 若同步调用 TISSelectInputSource，会形成
+                    //   WindowServer 等 callback → callback 等 TIS → TIS 等 WindowServer
+                    // 的环形等待，导致整个系统 UI 卡死。
+                    DispatchQueue.main.async {
+                        InputMethodManager.shared.toggleInputMethod()
+                    }
                 }
             }
             return nil

@@ -7,10 +7,12 @@ final class PunctuationService {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
 
-    private var cachedInputSourceID: String?
+    // CJKV 状态缓存 — 由 TIS 通知异步更新，CGEventTap callback 内只读取，绝不调用 TIS API。
+    // 原因：CGEventTap callback 运行在 WindowServer 事件分发线程，
+    // 若在此线程同步调用 TISCopyCurrentKeyboardInputSource/TISSelectInputSource，
+    // 会形成 WindowServer ↔ TIS 环形等待，导致全系统键盘鼠标卡死。
     private var cachedIsCJKV: Bool = false
-    private var cacheTimestamp: TimeInterval = 0
-    private let cacheTimeout: TimeInterval = 0.5
+    private let cacheLock = NSLock()
 
     private let punctuationMap: [UInt16: (normal: String?, shifted: String?)] = [
         UInt16(kVK_ANSI_Grave):        ("`", "~"),
@@ -77,14 +79,28 @@ final class PunctuationService {
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource!, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         isEnabled = true
+
+        // 初始化缓存（不在 callback 线程，安全）
+        refreshCJKVCache()
+
+        // 监听 TIS 变更，异步刷新缓存
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(handleTISChange),
+            name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil
+        )
+
         logger.info("punctuation service started")
         return true
     }
 
     func stop() {
+        DistributedNotificationCenter.default().removeObserver(self)
         stopSync()
-        cachedInputSourceID = nil
-        cacheTimestamp = 0
+        cacheLock.lock()
+        cachedIsCJKV = false
+        cacheLock.unlock()
         logger.info("punctuation service stopped")
     }
 
@@ -142,14 +158,24 @@ final class PunctuationService {
         return newEvent
     }
 
+    /// CGEventTap callback 内只做 O(1) 缓存读取，绝不调 TIS API
     private func isCurrentInputSourceCJKV() -> Bool {
-        let now = ProcessInfo.processInfo.systemUptime
-        if cachedInputSourceID != nil && now - cacheTimestamp < cacheTimeout {
-            return cachedIsCJKV
-        }
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cachedIsCJKV
+    }
 
+    /// 异步刷新 CJKV 缓存（在 TIS 通知回调中调用，不在 CGEventTap callback 线程）
+    @objc private func handleTISChange() {
+        refreshCJKVCache()
+    }
+
+    private func refreshCJKVCache() {
         guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else {
-            return false
+            cacheLock.lock()
+            cachedIsCJKV = false
+            cacheLock.unlock()
+            return
         }
 
         let id: String? = {
@@ -157,18 +183,17 @@ final class PunctuationService {
             return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
         }()
 
-        cachedInputSourceID = id
-        cacheTimestamp = now
-
         let lower = id?.lowercased() ?? ""
-        cachedIsCJKV = CJKVDetector.isCJKV(sourceID: lower)
+        var result = CJKVDetector.isCJKV(sourceID: lower)
 
-        if !cachedIsCJKV, let modePtr = TISGetInputSourceProperty(src, kTISPropertyInputModeID) {
+        if !result, let modePtr = TISGetInputSourceProperty(src, kTISPropertyInputModeID) {
             let modeID = Unmanaged<CFString>.fromOpaque(modePtr).takeUnretainedValue() as String
-            cachedIsCJKV = CJKVDetector.isCJKV(sourceID: modeID.lowercased())
+            result = CJKVDetector.isCJKV(sourceID: modeID.lowercased())
         }
 
-        return cachedIsCJKV
+        cacheLock.lock()
+        cachedIsCJKV = result
+        cacheLock.unlock()
     }
 }
 
