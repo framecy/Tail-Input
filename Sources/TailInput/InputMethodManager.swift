@@ -3,14 +3,21 @@ import Carbon
 import ApplicationServices
 
 enum AppInputStrategy: Int, Codable {
-    case globalDefault = 0 // 遵循全局默认（强切英文）
+    case globalDefault = 0   // 遵循全局默认（强切英文）
     case forceEnglish = 1
     case forceChinese = 2
     case keepCurrent = 3
+    case restorePrevious = 4 // 离开时记住输入源，回来时恢复
 }
 
 class InputMethodManager: NSObject {
     static let shared = InputMethodManager()
+
+    // ── 按应用记忆输入源 ──
+    let keyboardCache = AppKeyboardCache()
+
+    // ── 强制英文标点 ──
+    let punctuationService = PunctuationService()
 
     // ── 当前输入法状态缓存（布尔值，O(1) 读取）──
     private var cachedInputSourceID: String?
@@ -239,12 +246,47 @@ class InputMethodManager: NSObject {
 
     private func switchTo(chinese: Bool) {
         refreshCachedInputSource()
-        // 注意：这里不调用 adoptPendingTargetIfActive()。
-        // switchTo 由 applyStrategy（应用规则）调用，应始终以真实 TIS 状态为基准，
-        // 而不以"我们期望的目标"为基准；否则 pendingSwitchTarget 可能让 guard
-        // 错误地 bail-out，导致规则下的应用中 CapsLock 切换失效。
+        adoptPendingTargetIfActive()
         guard cachedIsChinese != chinese else { return }
         switchViaTIS(chinese: chinese)
+    }
+
+    /// 根据缓存恢复输入源。若无缓存则使用全局默认。
+    func restorePreviousInputSource(for bundleID: String) {
+        guard let cachedID = keyboardCache.retrieve(bundleID: bundleID) else {
+            // 无缓存，退回到强制英文
+            switchToEnglish()
+            return
+        }
+
+        // 构建 filter 查找缓存 ID 对应的 TISInputSource
+        let filter = [
+            kTISPropertyInputSourceID as String: cachedID,
+            kTISPropertyInputSourceIsSelectCapable as String: true,
+        ] as CFDictionary
+
+        guard let cfList = TISCreateInputSourceList(filter, false)?.takeRetainedValue(),
+              CFArrayGetCount(cfList) > 0,
+              let rawPtr = CFArrayGetValueAtIndex(cfList, 0)
+        else {
+            keyboardCache.remove(bundleID: bundleID)
+            switchToEnglish()
+            return
+        }
+
+        let source = Unmanaged<TISInputSource>.fromOpaque(rawPtr).takeUnretainedValue()
+        if selectInputSource(source, id: cachedID, chinese: CJKVDetector.isCJKV(sourceID: cachedID)) == noErr {
+            return
+        }
+        keyboardCache.remove(bundleID: bundleID)
+        switchToEnglish()
+    }
+
+    /// 离开 App 时保存当前输入源到缓存（用于 restorePrevious 策略）
+    func saveCurrentInputSource(for bundleID: String) {
+        if let id = cachedInputSourceID {
+            keyboardCache.save(bundleID: bundleID, sourceID: id)
+        }
     }
 
     func toggleInputMethod() {
@@ -484,6 +526,13 @@ class InputMethodManager: NSObject {
     // MARK: - 策略（委托 ConfiguredAppStore）
 
     func applyStrategy(for bundleIdentifier: String, appName: String?) {
+        let previousBundleID = currentAppBundleIdentifier
+
+        // 离开上一个 App 时保存其输入源
+        if let prev = previousBundleID, prev != bundleIdentifier {
+            saveCurrentInputSource(for: prev)
+        }
+
         currentAppBundleIdentifier = bundleIdentifier
         currentAppName = appName
 
@@ -497,11 +546,13 @@ class InputMethodManager: NSObject {
             case .forceEnglish: switchToEnglish()
             case .forceChinese: switchToChinese()
             case .keepCurrent:  break
-            default:            switchToEnglish()
+            case .restorePrevious: restorePreviousInputSource(for: bundleIdentifier)
+            case .globalDefault: switchToEnglish()
             }
         case .forceEnglish: switchToEnglish()
         case .forceChinese: switchToChinese()
         case .keepCurrent:  break
+        case .restorePrevious: restorePreviousInputSource(for: bundleIdentifier)
         }
 
         onAppChanged?()

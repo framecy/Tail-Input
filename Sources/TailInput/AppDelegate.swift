@@ -234,6 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 (.forceEnglish,  "切换为英文",   "e.circle"),
                 (.forceChinese,  "切换为中文",   "globe.asia.australia"),
                 (.keepCurrent,   "保持不变",     "arrow.uturn.backward"),
+                (.restorePrevious, "恢复上次输入源", "arrow.triangle.2.circlepath"),
             ]
             let iconCfg = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
             for (s, title, symbol) in strategies {
@@ -282,6 +283,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         capsLockItem.submenu = capsSub
         menu.addItem(capsLockItem)
+
+        // ── 强制英文标点 ──
+        let punctItem = NSMenuItem(title: "强制英文标点",
+                                    action: #selector(togglePunctuationService(_:)),
+                                    keyEquivalent: "")
+        punctItem.state = punctuationServiceEnabled ? .on : .off
+        menu.addItem(punctItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -463,6 +471,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func quit() {
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - 强制英文标点
+
+    var punctuationServiceEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "PunctuationServiceEnabled") }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "PunctuationServiceEnabled")
+            if newValue {
+                _ = InputMethodManager.shared.punctuationService.start()
+            } else {
+                InputMethodManager.shared.punctuationService.stop()
+            }
+        }
+    }
+
+    @objc func togglePunctuationService(_ sender: NSMenuItem) {
+        punctuationServiceEnabled.toggle()
     }
 }
 

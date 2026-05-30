@@ -151,7 +151,7 @@ private final class SidebarView: NSView {
     private let autoSwitch   = LabeledToggle(label: "自动切换输入法")
     private let loginItem    = LabeledToggle(label: "开机自启动")
     private let capsLockSeg  = NSSegmentedControl(labels: ["关闭", "兼容", "纯切换"], trackingMode: .selectOne, target: nil, action: nil)
-    private let globalSeg    = NSSegmentedControl(labels: ["英文", "中文", "保持"], trackingMode: .selectOne, target: nil, action: nil)
+    private let globalSeg    = NSSegmentedControl(labels: ["英文", "中文", "保持", "恢复"], trackingMode: .selectOne, target: nil, action: nil)
     private let hudPicker    = HUDPositionPicker()
     private let hudScreenRow = NSView()
     private let hudScreenPopup = NSPopUpButton()
@@ -179,6 +179,7 @@ private final class SidebarView: NSView {
         switch mgr.globalDefaultStrategy {
         case .forceChinese: globalSeg.selectedSegment = 1
         case .keepCurrent:  globalSeg.selectedSegment = 2
+        case .restorePrevious: globalSeg.selectedSegment = 3
         default:            globalSeg.selectedSegment = 0
         }
 
@@ -295,7 +296,7 @@ private final class SidebarView: NSView {
     }
 
     @objc private func globalSegChanged() {
-        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent]
+        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent, .restorePrevious]
         let sel = globalSeg.selectedSegment
         if sel >= 0 && sel < strategies.count {
             InputMethodManager.shared.globalDefaultStrategy = strategies[sel]
@@ -634,8 +635,8 @@ private final class RuleRowView: NSTableRowView {
             iconView.image = NSWorkspace.shared.icon(forFileType: "app")
         }
 
-        let titles = ["切换为英文", "切换为中文", "保持不变"]
-        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent]
+        let titles = ["切换为英文", "切换为中文", "保持不变", "恢复上次"]
+        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent, .restorePrevious]
         strategyPopup.removeAllItems()
         strategyPopup.addItems(withTitles: titles)
         if let idx = strategies.firstIndex(of: app.strategy) {
@@ -705,7 +706,7 @@ private final class RuleRowView: NSTableRowView {
     }
 
     @objc private func strategyChanged() {
-        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent]
+        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent, .restorePrevious]
         let idx = strategyPopup.indexOfSelectedItem
         if idx >= 0 && idx < strategies.count {
             onChange?(strategies[idx])
@@ -735,7 +736,7 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
     private let spinner = NSProgressIndicator()
     private let statusLabel = NSTextField(labelWithString: "")
     private let strategySegment = NSSegmentedControl(
-        labels: ["英文", "中文", "保持不变"],
+        labels: ["英文", "中文", "保持", "恢复"],
         trackingMode: .selectOne, target: nil, action: nil)
     private let addBtn = NSButton(title: "添加规则", target: nil, action: nil)
 
@@ -1044,7 +1045,7 @@ final class BrowserPane: NSView, NSTableViewDataSource, NSTableViewDelegate {
     @objc private func addTapped() {
         guard let bundleId = selectedBundleId,
               let appName = selectedAppName else { return }
-        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent]
+        let strategies: [AppInputStrategy] = [.forceEnglish, .forceChinese, .keepCurrent, .restorePrevious]
         let idx = strategySegment.selectedSegment
         let strategy = (idx >= 0 && idx < strategies.count) ? strategies[idx] : .forceEnglish
         ConfiguredAppStore.shared.setStrategy(strategy, for: bundleId, appName: appName)

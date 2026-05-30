@@ -22,6 +22,10 @@ final class AppInputStrategyTests: XCTestCase {
         XCTAssertEqual(AppInputStrategy.keepCurrent.rawValue, 3)
     }
 
+    func test_rawValue_restorePrevious_isFour() {
+        XCTAssertEqual(AppInputStrategy.restorePrevious.rawValue, 4)
+    }
+
     // MARK: - RawValue 反向构造
 
     func test_init_fromRawValue_globalDefault() {
@@ -40,6 +44,10 @@ final class AppInputStrategyTests: XCTestCase {
         XCTAssertEqual(AppInputStrategy(rawValue: 3), .keepCurrent)
     }
 
+    func test_init_fromRawValue_restorePrevious() {
+        XCTAssertEqual(AppInputStrategy(rawValue: 4), .restorePrevious)
+    }
+
     func test_init_fromRawValue_invalidReturnsNil() {
         XCTAssertNil(AppInputStrategy(rawValue: 99))
         XCTAssertNil(AppInputStrategy(rawValue: -1))
@@ -48,7 +56,7 @@ final class AppInputStrategyTests: XCTestCase {
     // MARK: - Codable 往返
 
     func test_codable_roundTrip_allCases() throws {
-        let cases: [AppInputStrategy] = [.globalDefault, .forceEnglish, .forceChinese, .keepCurrent]
+        let cases: [AppInputStrategy] = [.globalDefault, .forceEnglish, .forceChinese, .keepCurrent, .restorePrevious]
         for strategy in cases {
             let data = try JSONEncoder().encode(strategy)
             let decoded = try JSONDecoder().decode(AppInputStrategy.self, from: data)
