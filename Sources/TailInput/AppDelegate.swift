@@ -62,6 +62,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppObserver.shared.start()
 
+        // 启动 Helper 后台进程（CGEvent tap + TIS 切换容灾）
+        HelperDaemon.shared.launch()
+
+        // 恢复强制英文标点开关（UserDefaults 持久化）
+        if UserDefaults.standard.bool(forKey: "PunctuationServiceEnabled") {
+            _ = InputMethodManager.shared.punctuationService.start()
+        }
+
         // 启动时如果用户之前已开启 CapsLock 拦截，恢复模式后尝试 start —— tap 创建成功即代表权限有效
         let savedMode = InputMethodManager.shared.capsLockMode
         if savedMode != .off {
