@@ -387,9 +387,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 引导用户去系统设置授权辅助功能。
-    /// 不再调用 promptForPermission()（避免系统弹窗与本弹窗叠加干扰 TCC 状态）。
-    /// CGEvent.tapCreate 失败本身已会让 App 出现在辅助功能列表里，无需额外触发。
+    /// 引导用户去系统设置授权辅助功能（使用 osascript）
     func requestAccessibilityForCapsLock(mode: CapsLockMode = .compat) {
         let alert = NSAlert()
         alert.messageText = "请授权辅助功能"
@@ -399,9 +397,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        // 直接打开系统设置，不触发额外系统弹窗
-        AccessibilityManager.shared.openAccessibilitySettings()
-        // 标记"用户期望以此模式开启"，didBecomeActive 时自动重试
+        // 使用 osascript 打开隐私面板 + 启动快速轮询
+        AccessibilityManager.shared.requestAndAwaitGrant(onGranted: { [weak self] in
+            guard let self = self else { return }
+            if InputMethodManager.shared.tryEnableCapsLockMode(mode) {
+                self.pendingCapsLockMode = nil
+                MainWindowController.shared.refreshSidebar()
+            }
+        })
         pendingCapsLockMode = mode
     }
 
@@ -500,7 +503,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func togglePunctuationService(_ sender: NSMenuItem) {
-        punctuationServiceEnabled.toggle()
+        let willEnable = !punctuationServiceEnabled
+        if willEnable {
+            // 尝试启动；失败则引导输入监控权限
+            if !InputMethodManager.shared.punctuationService.start() {
+                let alert = NSAlert()
+                alert.messageText = "需要输入监控权限"
+                alert.informativeText = "强制英文标点需要在「系统设置 → 隐私与安全 → 输入监控」中授权 Tail Input。\n\n点击「打开系统设置」前往授权。"
+                alert.addButton(withTitle: "打开系统设置")
+                alert.addButton(withTitle: "取消")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    TCCManager.guidedAuthorizationFlow(for: .inputMonitoring, onGranted: { [weak self] in
+                        _ = InputMethodManager.shared.punctuationService.start()
+                        self?.punctuationServiceEnabled = true
+                    })
+                }
+                return
+            }
+        } else {
+            InputMethodManager.shared.punctuationService.stop()
+        }
+        punctuationServiceEnabled = willEnable
     }
 }
 
