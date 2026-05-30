@@ -93,6 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     alert.messageText = "辅助功能权限未能激活"
                     alert.informativeText = "请在「系统设置 → 隐私与安全 → 辅助功能」中确认 Tail Input 已开启，然后再次尝试开启 CapsLock 直接切换。"
                     alert.addButton(withTitle: "好")
+                    alert.window.level = .floating
                     alert.runModal()
                 }
             }
@@ -372,6 +373,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "已关闭，启用")
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "取消")
+        alert.window.level = .floating
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:
@@ -387,41 +389,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 引导用户去系统设置授权辅助功能（使用 osascript）
+    /// 引导用户去系统设置授权辅助功能（使用 osascript）。
+    /// 授权成功但进程仍需重启时，会在 didBecomeActive 时自动弹出重启提示。
     func requestAccessibilityForCapsLock(mode: CapsLockMode = .compat) {
         let alert = NSAlert()
         alert.messageText = "请授权辅助功能"
         alert.informativeText = "CapsLock 直接切换需要 Tail Input 在「系统设置 → 隐私与安全 → 辅助功能」中被授权。\n\n点击「打开系统设置」，在列表中找到 Tail Input 并开启开关，然后切回本 App 即可自动激活。"
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "取消")
+        alert.window.level = .floating
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        // 使用 osascript 打开隐私面板 + 启动快速轮询
+        // 标记期望的模式；didBecomeActive 负责重试
+        pendingCapsLockMode = mode
+
+        // 使用 osascript 打开隐私面板 + 轮询等待
         AccessibilityManager.shared.requestAndAwaitGrant(onGranted: { [weak self] in
-            guard let self = self else { return }
+            guard let self, let mode = self.pendingCapsLockMode else { return }
+            // 权限已获取，尝试立即启动 tap
             if InputMethodManager.shared.tryEnableCapsLockMode(mode) {
                 self.pendingCapsLockMode = nil
                 MainWindowController.shared.refreshSidebar()
             }
+            // 如果 tap 创建仍然失败（进程需重启），不清理 pendingCapsLockMode，
+            // 留给 handleAppDidBecomeActive 展示重启提示
         })
-        pendingCapsLockMode = mode
     }
 
     /// 用户期望开启拦截器但当前没权限，等待用户回到 App 时重试。
     /// nil 表示无待处理；非 nil 即重试目标模式。
     private var pendingCapsLockMode: CapsLockMode?
+    /// 防止重复弹出重启 Alert
+    private var didShowRestartAlert = false
 
     @objc func handleAppDidBecomeActive() {
         guard let mode = pendingCapsLockMode else { return }
         if InputMethodManager.shared.tryEnableCapsLockMode(mode) {
-            // 权限已获取，进程内 tap 创建成功
             pendingCapsLockMode = nil
+            didShowRestartAlert = false
             MainWindowController.shared.refreshSidebar()
-        } else {
+        } else if !didShowRestartAlert {
             // 权限已授予但当前进程仍无法创建 tap（macOS 部分版本需重启进程）
-            // 标记重启意图，只弹一次
             pendingCapsLockMode = nil
+            didShowRestartAlert = true
             showRestartForCapsLockAlert()
         }
     }
@@ -433,20 +444,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = "辅助功能权限已授予，但当前进程需要重启才能激活 CapsLock 功能。点击「立即重启」，App 重启后会自动启用。"
         alert.addButton(withTitle: "立即重启")
         alert.addButton(withTitle: "稍后")
+        alert.window.level = .floating
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        // 持久化"重启后自动开启"意图，新进程启动时读取
         UserDefaults.standard.set(true, forKey: "PendingCapsLockEnableOnLaunch")
 
-        // 强制启动新实例（不激活已有进程），再退出当前进程
-        // createsNewApplicationInstance = true 确保 LaunchServices 真正新建进程，
-        // 而非 open() 在旧进程仍运行时只做激活（导致新进程未建立就退出了）
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = true
         NSWorkspace.shared.open(Bundle.main.bundleURL, configuration: config, completionHandler: nil)
 
-        // 给新进程足够时间完成启动后再退出
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             NSApp.terminate(nil)
         }
@@ -512,6 +519,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 alert.informativeText = "强制英文标点需要在「系统设置 → 隐私与安全 → 输入监控」中授权 Tail Input。\n\n点击「打开系统设置」前往授权。"
                 alert.addButton(withTitle: "打开系统设置")
                 alert.addButton(withTitle: "取消")
+                alert.window.level = .floating
                 if alert.runModal() == .alertFirstButtonReturn {
                     TCCManager.guidedAuthorizationFlow(for: .inputMonitoring, onGranted: { [weak self] in
                         _ = InputMethodManager.shared.punctuationService.start()
