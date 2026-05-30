@@ -27,7 +27,7 @@ targets:
         PRODUCT_MODULE_NAME: TailInput
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-    preBuildScripts:
+    postCompileScripts:
       - name: "Copy Helper into Bundle"
         script: |
           HELPER_SRC="${BUILT_PRODUCTS_DIR}/TailInputHelper"
